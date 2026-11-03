@@ -1,0 +1,3 @@
+# Base64-encoded 32-byte AES key used to protect pagination tokens.
+pagination:
+  encodedKey: "${PAGINATION_ENCODED_KEY}"

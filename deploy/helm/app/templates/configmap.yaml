@@ -1,0 +1,33 @@
+{{- $files := .Files.Glob "configs/*.yaml" -}}
+{{- if not $files -}}
+{{- fail "runtime config is required; use prepare.sh to load backend/configs/<service>-server" -}}
+{{- end -}}
+{{- $data := dict -}}
+{{- range $path, $_ := $files -}}
+  {{- $content := $.Files.Get $path -}}
+  {{- if eq (base $path) "server.yaml" -}}
+    {{- $server := fromYaml $content -}}
+    {{- if hasKey $server "Error" -}}{{- fail (get $server "Error") -}}{{- end -}}
+    {{- $key := required "server.configKey is required in the service values" $.Values.server.configKey -}}
+    {{- if and (empty (get $server $key)) (hasKey $server "server") -}}{{- $key = "server" -}}{{- end -}}
+    {{- if not (hasKey $server $key) -}}{{- fail (printf "server.yaml is missing configuration key %s or server" $key) -}}{{- end -}}
+    {{- $listeners := get $server $key -}}
+    {{- if not (kindIs "map" $listeners) -}}{{- fail "server.yaml listener configuration must be a map" -}}{{- end -}}
+    {{- $bindHost := required "server.bindHost is required; migrate app/values.yaml to shared defaults" $.Values.server.bindHost -}}
+    {{- if not (hasKey $.Values.server "allowRemoteDebug") -}}{{- fail "server.allowRemoteDebug is required in shared values" -}}{{- end -}}
+    {{- $_ := set $listeners "httpAddr" (printf "%s:${SERVER_HTTP_PORT}" $bindHost) -}}
+    {{- $_ := set $listeners "grpcAddr" (printf "%s:${SERVER_GRPC_PORT}" $bindHost) -}}
+    {{- $_ := set $listeners "debugAddr" (printf "%s:${SERVER_DEBUG_PORT}" $bindHost) -}}
+    {{- $_ := set $listeners "allowRemoteDebug" $.Values.server.allowRemoteDebug -}}
+    {{- $content = toYaml $server -}}
+  {{- end -}}
+  {{- $_ := set $data (base $path) $content -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fino.fullname" . }}-config
+  labels:
+    {{- include "fino.labels" . | nindent 4 }}
+data:
+  {{- $data | toYaml | nindent 2 }}

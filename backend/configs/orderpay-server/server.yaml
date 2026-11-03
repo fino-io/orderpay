@@ -1,0 +1,8 @@
+server:
+  httpAddr: ":30101"
+  grpcAddr: ":30102"
+  debugAddr: ":30103"
+orderpayServer:
+  httpAddr: ":${SERVER_HTTP_PORT}"
+  grpcAddr: ":${SERVER_GRPC_PORT}"
+  debugAddr: ":${SERVER_DEBUG_PORT}"

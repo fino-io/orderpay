@@ -1,0 +1,37 @@
+{{- range $name, $component := .Values.components }}
+{{- if $component.enabled }}
+{{- $values := deepCopy $component.values }}
+{{- if eq $name "alloy" }}
+{{- $_ := set $values.alloy.configMap "content" ($.Files.Get "files/config.alloy") }}
+{{- end }}
+{{- if eq $name "grafana" }}
+{{- $dashboards := dict }}
+{{- range $path, $_ := $.Files.Glob "files/dashboards/*.json" }}
+{{- $_ := set $dashboards (trimSuffix ".json" (base $path)) (dict "json" ($.Files.Get $path)) }}
+{{- end }}
+{{- $_ := set $values "dashboards" (dict "default" $dashboards) }}
+{{- end }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ $.Values.applicationPrefix }}{{ $name }}
+  namespace: {{ $.Values.argocdNamespace }}
+spec:
+  project: {{ $.Values.project }}
+  source:
+    repoURL: {{ $component.repoURL | quote }}
+    chart: {{ $component.chart | quote }}
+    targetRevision: {{ $component.version | quote }}
+    helm:
+      releaseName: {{ $name }}
+      valuesObject:
+        {{- toYaml $values | nindent 8 }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ $component.namespace }}
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}
+{{- end }}

@@ -1,0 +1,95 @@
+logging {
+	level  = "info"
+	format = "json"
+}
+
+discovery.docker "logs" {
+	host             = "unix:///var/run/docker.sock"
+	refresh_interval = "5s"
+
+	filter {
+		name   = "label"
+		values = ["fino.logs=true"]
+	}
+}
+
+discovery.relabel "logs" {
+	targets = []
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "service_name"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+		target_label  = "compose_project"
+	}
+}
+
+loki.source.docker "logs" {
+	host          = "unix:///var/run/docker.sock"
+	targets       = discovery.docker.logs.targets
+	labels        = { platform = "docker" }
+	relabel_rules = discovery.relabel.logs.rules
+	forward_to    = [loki.process.levels.receiver]
+}
+
+loki.process "levels" {
+	forward_to = [loki.write.local.receiver]
+
+	stage.json {
+		expressions = { level = "level" }
+	}
+
+	stage.regex {
+		expression = "^\\\\S+\\\\s+(?P<level>debug|info|warn|error|fatal)\\\\s+"
+	}
+
+	stage.labels {
+		values = { level = "" }
+	}
+}
+
+loki.write "local" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}
+
+otelcol.receiver.otlp "default" {
+	grpc {}
+	http {}
+
+	output {
+		logs = [otelcol.processor.batch.default.input]
+		traces = [otelcol.processor.batch.traces.input]
+	}
+}
+
+otelcol.processor.batch "default" {
+	output {
+		logs = [otelcol.exporter.otlphttp.loki.input]
+	}
+}
+
+otelcol.exporter.otlphttp "loki" {
+	client {
+		endpoint = "http://loki:3100/otlp"
+	}
+}
+
+otelcol.processor.batch "traces" {
+	output {
+		traces = [otelcol.exporter.otlp.tempo.input]
+	}
+}
+
+otelcol.exporter.otlp "tempo" {
+	client {
+		endpoint = "tempo:4317"
+		tls {
+			insecure = true
+		}
+	}
+}

@@ -1,0 +1,67 @@
+# Shared defaults. Put service-specific deployment settings in services/.
+image:
+  repository: ""
+  tag: latest-amd64
+  pullPolicy: Always
+imagePullSecrets: []
+replicaCount: 1
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# Shared deployment addresses; service env can override these values.
+env:
+  OTEL_ENDPOINT: alloy.observability.svc.cluster.local:4317
+
+# Only Kubernetes listener settings are overlaid onto the shared server.yaml.
+server:
+  configKey: ""
+  bindHost: "0.0.0.0"
+  allowRemoteDebug: true
+
+# Backend listeners and Service ports.
+ports:
+  http: 31101
+  grpc: 31102
+  debug: 31103
+
+# SQLite requires a writable volume. EmptyDir is for temporary development only.
+sqlite:
+  enabled: false
+  existingClaim: ""
+
+frontend:
+  enabled: false
+  image:
+    repository: ""
+    tag: latest-amd64
+    pullPolicy: Always
+  replicaCount: 1
+  apiPrefix: /api
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: ""
+  tls: []
+
+# Attach routes to an existing shared Gateway; keep Services as ClusterIP.
+# Choose gateway or ingress, never both.
+gateway:
+  enabled: false
+  parentRef:
+    name: ""
+    namespace: ""
+    sectionName: websecure
+  # Each route has a unique name, hostnames, and backend: server or frontend.
+  routes: []

@@ -1,0 +1,15 @@
+logs:
+  level: info
+  encode: json
+  # output: file
+  initFields:
+    package: orderpay.v1
+    server: orderpay-server
+    # version: v0.1.0
+  file:
+    path: ./logs/app.log
+    maxSize: 100
+    maxBackups: 10
+    maxAge: 28
+    encode: json
+    # Compress: false

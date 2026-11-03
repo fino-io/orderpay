@@ -1,0 +1,105 @@
+appCode: 1
+bizCode: 6
+errorCode:
+  - name: OrderpayRequestValidationFailed
+    code: 601
+    message: 'invalid {field}: validation failed on {rule}'
+    description: request field validation failed before app processing
+    countInSLA: false
+    httpStatus: 400
+  - name: OrderpayRequestMissing
+    code: 1001
+    message: 'request is required'
+    description: app handler received a nil request
+    countInSLA: false
+    httpStatus: 400
+  # 1010-1019: GetOrderpay (1010 reserved)
+  - name: GetOrderpayFailed
+    code: 1011
+    message: 'get resource failed'
+    description: failed to get resource in service
+    countInSLA: true
+  - name: OrderpayNotFound
+    code: 1012
+    message: 'resource not found'
+    description: requested resource does not exist
+    countInSLA: false
+    httpStatus: 404
+  # 1020-1029: ListOrderpays (1020 reserved)
+  - name: ListOrderpaysFailed
+    code: 1021
+    message: 'list resources failed'
+    description: failed to list resources in service
+    countInSLA: true
+  - name: ListOrderpaysBadPageToken
+    code: 1022
+    message: 'list resources with bad page token'
+    description: failed to list resources with bad page token
+    countInSLA: true
+    httpStatus: 400
+  # 1030-1039: CreateOrderpay (1030 reserved)
+  - name: CreateOrderpayInputInvalid
+    code: 1031
+    message: 'create resource input invalid'
+    description: create resource input cannot be converted to domain input
+    countInSLA: false
+    httpStatus: 400
+  - name: CreateOrderpayFailed
+    code: 1032
+    message: 'create resource failed'
+    description: failed to create resource in service
+    countInSLA: true
+  # 1040-1049: UpdateOrderpay (1040 reserved)
+  - name: UpdateOrderpayInputInvalid
+    code: 1041
+    message: 'update resource input invalid'
+    description: update resource input cannot be converted to domain input
+    countInSLA: false
+    httpStatus: 400
+  - name: UpdateOrderpayFailed
+    code: 1042
+    message: 'update resource failed'
+    description: failed to update resource in service
+    countInSLA: true
+  # 1050-1059: DeleteOrderpays (1050 reserved)
+  - name: DeleteOrderpaysFailed
+    code: 1051
+    message: 'delete resources failed'
+    description: failed to delete resource in service
+    countInSLA: true
+  - name: CancelOrderFailed
+    code: 1061
+    message: 'cancel order failed'
+    description: cancel order failed
+    countInSLA: true
+    httpStatus: 500
+  - name: OrderConflict
+    code: 1062
+    message: 'order content or state conflicts'
+    description: order content or state conflicts
+    countInSLA: false
+    httpStatus: 409
+  - name: PaymentConflict
+    code: 1063
+    message: 'payment content or state conflicts'
+    description: payment content or state conflicts
+    countInSLA: false
+    httpStatus: 409
+  - name: PaymentUnavailable
+    code: 1064
+    message: 'payment channel is disabled'
+    description: payment channel is disabled
+    countInSLA: false
+    httpStatus: 503
+  - name: CreatePaymentFailed
+    code: 1071
+    message: 'create payment failed'
+    description: create payment failed
+    countInSLA: true
+    httpStatus: 500
+  - name: ListAuditEventsFailed
+    code: 1072
+    message: 'list audit events failed'
+    description: list audit events failed
+    countInSLA: true
+    httpStatus: 500

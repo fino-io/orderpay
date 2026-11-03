@@ -1,0 +1,6 @@
+business:
+  readEvery: 50ms
+  writeEvery: 500ms
+  burst: 10
+  maxKeys: 10000
+  ttl: 10m

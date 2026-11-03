@@ -1,0 +1,10 @@
+sd:
+  mode: direct
+  url: 172.3.0.98:2379
+  etcd:
+    dialTimeout: 3
+    dialKeepAlive: 3
+  direct:
+    user.v1.UserService:
+      urls:
+        - "user-server:32132"

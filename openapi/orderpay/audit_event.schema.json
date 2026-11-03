@@ -1,0 +1,40 @@
+{
+  "title": "orderpay.AuditEvent",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "actorId": {
+      "type": "string"
+    },
+    "afterStatus": {
+      "type": "string"
+    },
+    "beforeStatus": {
+      "type": "string"
+    },
+    "createTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidenceReference": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "merchantId": {
+      "type": "string"
+    },
+    "reasonCode": {
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "resourceId": {
+      "type": "string"
+    }
+  }
+}

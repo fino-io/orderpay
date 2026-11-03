@@ -1,0 +1,3 @@
+metrics:
+  enable: true
+  namespace: orderpay

@@ -1,0 +1,72 @@
+name: orderpay
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  orderpay-server:
+    container_name: "orderpay-server"
+    image: "${IMAGE_REPOSITORY}/${ORDERPAY_SERVER_IMAGE}"
+    restart: unless-stopped
+    logging: *default-logging
+    labels:
+      fino.logs: "true"
+    networks:
+      - infra
+    ports:
+      - "127.0.0.1:${SERVER_HTTP_PORT}:${SERVER_HTTP_PORT}"
+      - "127.0.0.1:${SERVER_GRPC_PORT}:${SERVER_GRPC_PORT}"
+      - "127.0.0.1:${SERVER_DEBUG_PORT}:${SERVER_DEBUG_PORT}"
+    volumes:
+      - ./bootstrap/orderpay-server:/app/bootstrap
+      - ../../backend/configs/orderpay-server:/app/configs:ro
+    environment:
+      TZ: Asia/Shanghai
+      SERVER_HTTP_PORT: "${SERVER_HTTP_PORT}"
+      SERVER_GRPC_PORT: "${SERVER_GRPC_PORT}"
+      SERVER_DEBUG_PORT: "${SERVER_DEBUG_PORT}"
+      PAGINATION_ENCODED_KEY: "${PAGINATION_ENCODED_KEY}"
+      OTEL_ENDPOINT: "alloy:4318"
+    entrypoint: [ "sh", "/app/bootstrap/entrypoint.sh" ]
+    healthcheck:
+      test: [ "CMD", "sh", "/app/bootstrap/healthcheck.sh" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  frontend:
+    container_name: "orderpay-frontend"
+    image: "${IMAGE_REPOSITORY}/${ORDERPAY_FRONTEND_IMAGE}"
+    restart: always
+    logging: *default-logging
+    labels:
+      fino.logs: "true"
+    networks:
+      - infra
+    ports:
+      - "${ORDERPAY_FRONTEND_PORT}:80"
+      - "443:443"
+    volumes:
+      - ./bootstrap/caddy:/bootstrap:ro
+      - caddy_data:/data
+    environment:
+      APP_HOST: "${ORDERPAY_APP_HOST:-orderpay-server}"
+      APP_PORT: "${SERVER_HTTP_PORT}"
+      API_PREFIX: "${ORDERPAY_API_PREFIX:-/orderpay/v1}"
+    entrypoint: [ "sh", "/bootstrap/entrypoint.sh" ]
+    healthcheck:
+      test: [ "CMD", "sh", "/bootstrap/healthcheck.sh" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+networks:
+  infra:
+    external: true
+
+volumes:
+  caddy_data:

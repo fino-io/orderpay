@@ -1,0 +1,6 @@
+tracing:
+  enable: false
+  endpoint: ${OTEL_ENDPOINT}
+  sampleRatio: 1
+  serviceVersion: ''
+  serviceInstanceID: ''

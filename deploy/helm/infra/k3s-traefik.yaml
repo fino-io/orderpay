@@ -1,0 +1,28 @@
+# Optional K3s bootstrap; merge with an existing HelmChartConfig before applying.
+# Create apps-tls in kube-system and label allowed application namespaces first.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    providers:
+      kubernetesGateway:
+        enabled: true
+    gateway:
+      enabled: true
+      name: apps
+      listeners:
+        web: null
+        websecure:
+          port: 8443
+          protocol: HTTPS
+          mode: Terminate
+          certificateRefs:
+            - name: apps-tls
+          namespacePolicy:
+            from: Selector
+            selector:
+              matchLabels:
+                fino.io/gateway: apps

@@ -1,0 +1,35 @@
+{
+  "name": "fino-frontend",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "check": "tsc --noEmit",
+    "build": "npm run check && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "idb-keyval": "^6.2.1",
+    "mdast-util-from-markdown": "^2.0.3",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.2",
+    "remark-gfm": "^4.0.1",
+    "yaml": "^2.9.0"
+  },
+  "overrides": {
+    "postcss": "8.5.26"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.0",
+    "@types/node": "22.15.29",
+    "@types/react": "19.0.11",
+    "@types/react-dom": "19.0.4",
+    "typescript": "5.8.3",
+    "vite": "^8.2.2"
+  }
+}

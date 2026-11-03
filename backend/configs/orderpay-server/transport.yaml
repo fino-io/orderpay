@@ -1,0 +1,32 @@
+transport:
+  # Per-process protection. Use Redis or gateway rate limiting for a cluster-wide quota.
+  rateLimit:
+    enabled: true
+    every: 50ms
+    burst: 40
+    maxKeys: 10000
+    ttl: 10m
+  accessLog:
+    slowThreshold: 500ms
+    sampleEvery: 100
+    http:
+      skipPaths:
+        - /healthz
+        - /readyz
+        - /metrics
+    grpc:
+      skipMethods:
+        - /grpc.health.v1.Health/Check
+        - /grpc.health.v1.Health/Watch
+  http:
+    cors:
+      # Cross-origin browser access is disabled until exact origins are listed.
+      allowedOrigins:
+        - http://localhost:5173
+        - http://127.0.0.1:5173
+    # Only requests received from these CIDRs may use X-Forwarded-For.
+    trustedProxies: []
+  # Discovery clients use round_robin by default. Set a client service config
+  # below only when a custom gRPC service config is required.
+  grpc:
+    

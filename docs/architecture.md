@@ -1,6 +1,6 @@
 # 支付与订单服务架构
 
-基于 Fino 和 SQLite，面向已签约授权代扣场景，提供订单管理、支付受理、结果确认和业务审计。当前交付为架构与 proto 契约，尚未实现后端；API 以 `proto/` 为准。
+基于 Fino 和 SQLite，面向已签约授权代扣场景，提供订单管理、支付受理、结果确认和业务审计。API 以 `proto/` 为准；本文描述目标设计，当前本地实现及真实渠道边界见[验收记录](acceptance.md)。
 
 ## 1. 服务定位
 
@@ -110,4 +110,4 @@ PaymentInput 仅含 mandateReference；订单详情聚合 OrderView 与可空 Pa
 
 本方案借鉴 [Vendure 的渠道处理器](https://github.com/vendurehq/vendure/blob/master/packages/core/src/config/payment/payment-method-handler.ts)、[Medusa 的支付快照](https://github.com/medusajs/medusa/blob/develop/packages/modules/payment/src/models/payment.ts)、[Stripe 的幂等重试](https://github.com/stripe/stripe-go#automatic-retries)及 [Kill Bill 的查询恢复](https://docs.killbill.io/latest/payment_plugin)，按当前范围保留必要机制。
 
-当前仅维护设计与契约，不运行 `fino build`。实现阶段需启用 SQLite、验证迁移，并覆盖取消与提交竞争、扣款后落库失败、回调与重试竞争、矛盾终态、重试预算、人工核查及磁盘故障。使用本机持久卷和在线备份；恢复旧备份后先核对渠道账单，切换前隔离旧实例。监控写等待、WAL 与磁盘、待处理年龄、重试及核查积压。容量、恢复点和恢复耗时须经压测与演练验证，本方案不提供多机高可用。
+本地代码已通过 Fino 生成，具体验收结果见[验收记录](acceptance.md)。实现阶段需启用 SQLite、验证迁移，并覆盖取消与提交竞争、扣款后落库失败、回调与重试竞争、矛盾终态、重试预算、人工核查及磁盘故障。使用本机持久卷和在线备份；恢复旧备份后先核对渠道账单，切换前隔离旧实例。监控写等待、WAL 与磁盘、待处理年龄、重试及核查积压。容量、恢复点和恢复耗时须经压测与演练验证，本方案不提供多机高可用。

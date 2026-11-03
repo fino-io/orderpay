@@ -1,0 +1,377 @@
+# Project-owned infrastructure configuration.
+argocdNamespace: argocd
+project: default
+applicationPrefix: infra-
+components:
+  postgresql:
+    enabled: false
+    repoURL: registry-1.docker.io/cloudpirates
+    chart: postgres
+    version: 0.21.2
+    namespace: infra
+    values:
+      fullnameOverride: postgresql
+      image:
+        tag: 16.15-bookworm
+        imagePullPolicy: IfNotPresent
+      auth:
+        existingSecret: postgresql-auth
+      config:
+        postgresql:
+          shared_buffers: 128MB
+          effective_cache_size: 512MB
+          max_connections: 100
+          wal_keep_size: 128
+          timezone: Asia/Shanghai
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+      persistence:
+        enabled: true
+        storageClass: local-path
+        size: 10Gi
+  loki:
+    enabled: true
+    repoURL: https://grafana-community.github.io/helm-charts
+    chart: loki
+    version: 19.0.1
+    namespace: observability
+    values:
+      fullnameOverride: loki
+      deploymentMode: Monolithic
+      read:
+        replicas: 0
+      write:
+        replicas: 0
+      backend:
+        replicas: 0
+      loki:
+        auth_enabled: false
+        commonConfig:
+          replication_factor: 1
+        storage:
+          type: filesystem
+        schemaConfig:
+          configs:
+          - from: '2024-04-01'
+            store: tsdb
+            object_store: filesystem
+            schema: v13
+            index:
+              prefix: index_
+              period: 24h
+        limits_config:
+          allow_structured_metadata: true
+          retention_period: 168h
+        compactor:
+          retention_enabled: true
+          delete_request_store: filesystem
+        analytics:
+          reporting_enabled: false
+      singleBinary:
+        replicas: 1
+        sidecar: false
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        persistence:
+          enabled: true
+          storageClass: local-path
+          size: 10Gi
+          whenDeleted: Retain
+          whenScaled: Retain
+      gateway:
+        enabled: false
+      chunksCache:
+        enabled: false
+      resultsCache:
+        enabled: false
+      lokiCanary:
+        enabled: false
+      test:
+        enabled: false
+  tempo:
+    enabled: true
+    repoURL: https://grafana-community.github.io/helm-charts
+    chart: tempo
+    version: 3.2.0
+    namespace: observability
+    values:
+      fullnameOverride: tempo
+      tempo:
+        reportingEnabled: false
+        retention: 72h
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        receivers:
+          jaeger: null
+          otlp:
+            protocols:
+              grpc:
+                endpoint: 0.0.0.0:4317
+              http:
+                endpoint: 0.0.0.0:4318
+      persistence:
+        enabled: true
+        storageClassName: local-path
+        size: 5Gi
+  alloy:
+    enabled: true
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    version: 1.14.0
+    namespace: observability
+    values:
+      fullnameOverride: alloy
+      crds:
+        create: false
+      controller:
+        type: statefulset
+        replicas: 1
+        volumeClaimTemplates:
+        - metadata:
+            name: alloy-data
+          spec:
+            accessModes:
+            - ReadWriteOnce
+            storageClassName: local-path
+            resources:
+              requests:
+                storage: 1Gi
+      alloy:
+        configMap: {}
+        enableReporting: false
+        storagePath: /var/lib/alloy/data
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+        mounts:
+          extra:
+          - name: alloy-data
+            mountPath: /var/lib/alloy/data
+        extraPorts:
+        - name: otlp-grpc
+          port: 4317
+          targetPort: 4317
+          protocol: TCP
+        - name: otlp-http
+          port: 4318
+          targetPort: 4318
+          protocol: TCP
+  prometheus:
+    enabled: true
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus
+    version: 29.37.0
+    namespace: observability
+    values:
+      alertmanager:
+        enabled: false
+      kube-state-metrics:
+        enabled: false
+      prometheus-node-exporter:
+        enabled: false
+      prometheus-pushgateway:
+        enabled: false
+      server:
+        fullnameOverride: prometheus
+        statefulSet:
+          enabled: true
+        retention: 7d
+        retentionSize: 4GB
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        persistentVolume:
+          enabled: true
+          storageClass: local-path
+          size: 5Gi
+        global:
+          scrape_interval: 15s
+          evaluation_interval: 15s
+      scrapeConfigs:
+        prometheus:
+          enabled: false
+        kubernetes-api-servers:
+          enabled: false
+        kubernetes-nodes:
+          enabled: false
+        kubernetes-nodes-cadvisor:
+          enabled: false
+        kubernetes-service-endpoints:
+          enabled: false
+        kubernetes-service-endpoints-slow:
+          enabled: false
+        prometheus-pushgateway:
+          enabled: false
+        kubernetes-services:
+          enabled: false
+        kubernetes-pods:
+          enabled: false
+        kubernetes-pods-slow:
+          enabled: false
+      serverFiles:
+        prometheus.yml:
+          scrape_configs:
+          - job_name: prometheus
+            static_configs:
+            - targets:
+              - localhost:9090
+          - job_name: tempo
+            static_configs:
+            - targets:
+              - tempo:3200
+          - job_name: alloy
+            static_configs:
+            - targets:
+              - alloy:12345
+          - job_name: fino-services
+            kubernetes_sd_configs:
+            - role: pod
+            relabel_configs:
+            - source_labels:
+              - __meta_kubernetes_pod_annotation_prometheus_io_scrape
+              action: keep
+              regex: 'true'
+            - source_labels:
+              - __meta_kubernetes_pod_container_port_name
+              action: keep
+              regex: debug
+            - source_labels:
+              - __meta_kubernetes_pod_phase
+              action: keep
+              regex: Running
+            - source_labels:
+              - __meta_kubernetes_pod_annotation_prometheus_io_path
+              action: replace
+              target_label: __metrics_path__
+              regex: (.+)
+            - source_labels:
+              - __meta_kubernetes_pod_label_app_kubernetes_io_name
+              regex: (.+)
+              target_label: job
+              replacement: $1-server
+            - source_labels:
+              - __meta_kubernetes_namespace
+              target_label: namespace
+            - source_labels:
+              - __meta_kubernetes_pod_name
+              target_label: pod
+  grafana:
+    enabled: true
+    repoURL: https://grafana-community.github.io/helm-charts
+    chart: grafana
+    version: 13.0.1
+    namespace: observability
+    values:
+      fullnameOverride: grafana
+      image:
+        tag: 13.2.0
+      admin:
+        existingSecret: grafana-admin
+        userKey: admin-user
+        passwordKey: admin-password
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          memory: 1Gi
+      persistence:
+        enabled: true
+        type: sts
+        storageClassName: local-path
+        size: 1Gi
+      testFramework:
+        enabled: false
+      initChownData:
+        enabled: false
+      grafana.ini:
+        plugins:
+          preinstall_disabled: true
+          preinstall_auto_update: false
+        server:
+          root_url: '%(protocol)s://%(domain)s/'
+          serve_from_sub_path: false
+        users:
+          allow_sign_up: false
+        auth.anonymous:
+          enabled: false
+        analytics:
+          reporting_enabled: false
+          check_for_updates: false
+          check_for_plugin_updates: false
+      ingress:
+        enabled: false
+        ingressClassName: traefik
+        hosts: []
+      datasources:
+        datasources.yaml:
+          apiVersion: 1
+          datasources:
+          - name: Prometheus
+            uid: prometheus
+            type: prometheus
+            access: proxy
+            url: http://prometheus:80
+            isDefault: true
+            editable: false
+          - name: Loki
+            uid: loki
+            type: loki
+            access: proxy
+            url: http://loki:3100
+            editable: false
+            jsonData:
+              derivedFields:
+              - datasourceUid: tempo
+                matcherRegex: '"trace_id"\s*:\s*"([0-9a-f]{32})"'
+                name: TraceID
+                url: $${__value.raw}
+                urlDisplayLabel: View trace
+          - name: Tempo
+            uid: tempo
+            type: tempo
+            access: proxy
+            url: http://tempo:3200
+            editable: false
+            jsonData:
+              tracesToLogsV2:
+                datasourceUid: loki
+                spanStartTimeShift: -5m
+                spanEndTimeShift: 5m
+                tags:
+                - key: service.name
+                  value: service_name
+                filterByTraceID: false
+                filterBySpanID: false
+                customQuery: true
+                query: '{$${__tags}} |= `$${__trace.traceId}`'
+      dashboardProviders:
+        dashboardproviders.yaml:
+          apiVersion: 1
+          providers:
+          - name: default
+            orgId: 1
+            folder: Services
+            type: file
+            disableDeletion: false
+            editable: false
+            options:
+              path: /var/lib/grafana/dashboards/default

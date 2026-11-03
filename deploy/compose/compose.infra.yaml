@@ -1,0 +1,184 @@
+name: infra
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+
+  loki:
+    container_name: "infra-loki"
+    image: "${LOKI_IMAGE_REGISTRY}/${LOKI_IMAGE_REPOSITORY}/${LOKI_IMAGE_NAME}:${LOKI_IMAGE_TAG}"
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - infra
+    ports:
+      - "127.0.0.1:${LOKI_PORT}:3100"
+    volumes:
+      - infra_loki_data:/loki
+      - ./bootstrap/loki/config.yaml:/etc/loki/config.yaml:ro
+    command: ["-config.file=/etc/loki/config.yaml"]
+    healthcheck:
+      test: ["CMD", "/usr/bin/loki", "-config.file=/etc/loki/config.yaml", "-verify-config=true"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  tempo:
+    container_name: "infra-tempo"
+    image: "${TEMPO_IMAGE_REGISTRY}/${TEMPO_IMAGE_REPOSITORY}/${TEMPO_IMAGE_NAME}:${TEMPO_IMAGE_TAG}"
+    restart: unless-stopped
+    logging: *default-logging
+    labels:
+      fino.logs: "true"
+    networks:
+      - infra
+    environment:
+      TEMPO_RETENTION: "${TEMPO_RETENTION}"
+    volumes:
+      - infra_tempo_data:/var/tempo
+      - ./bootstrap/tempo/config.yaml:/etc/tempo.yaml:ro
+    command: ["-config.file=/etc/tempo.yaml", "-config.expand-env=true"]
+    healthcheck:
+      test: ["CMD", "/tempo", "-config.file=/etc/tempo.yaml", "-config.expand-env=true", "-config.verify=true"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  alloy:
+    container_name: "infra-alloy"
+    image: "${ALLOY_IMAGE_REGISTRY}/${ALLOY_IMAGE_REPOSITORY}/${ALLOY_IMAGE_NAME}:${ALLOY_IMAGE_TAG}"
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      loki:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    networks:
+      - infra
+    ports:
+      - "127.0.0.1:${ALLOY_HTTP_PORT}:12345"
+      - "127.0.0.1:${ALLOY_OTLP_GRPC_PORT}:4317"
+      - "127.0.0.1:${ALLOY_OTLP_HTTP_PORT}:4318"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - infra_alloy_data:/var/lib/alloy/data
+      - ./bootstrap/alloy/config.alloy:/etc/alloy/config.alloy:ro
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --disable-reporting
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    healthcheck:
+      test: ["CMD", "/bin/alloy", "validate", "/etc/alloy/config.alloy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  prometheus:
+    container_name: "infra-prometheus"
+    image: "${PROMETHEUS_IMAGE_REGISTRY}/${PROMETHEUS_IMAGE_REPOSITORY}/${PROMETHEUS_IMAGE_NAME}:${PROMETHEUS_IMAGE_TAG}"
+    restart: unless-stopped
+    logging: *default-logging
+    labels:
+      fino.logs: "true"
+    networks:
+      - infra
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT}:9090"
+    volumes:
+      - infra_prometheus_data:/prometheus
+    configs:
+      - source: prometheus
+        target: /etc/prometheus/prometheus.yml
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  grafana:
+    container_name: "infra-grafana"
+    image: "${GRAFANA_IMAGE_REGISTRY}/${GRAFANA_IMAGE_REPOSITORY}/${GRAFANA_IMAGE_NAME}:${GRAFANA_IMAGE_TAG}"
+    restart: unless-stopped
+    logging: *default-logging
+    labels:
+      fino.logs: "true"
+    depends_on:
+      loki:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    networks:
+      - infra
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD}"
+      GF_SERVER_ROOT_URL: "${GRAFANA_ROOT_URL}"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    volumes:
+      - infra_grafana_data:/var/lib/grafana
+      - ./bootstrap/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./bootstrap/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./bootstrap/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+networks:
+  infra:
+    name: infra
+    driver: bridge
+
+volumes:
+  infra_loki_data:
+    name: infra_loki_data
+  infra_tempo_data:
+    name: infra_tempo_data
+  infra_alloy_data:
+    name: infra_alloy_data
+  infra_prometheus_data:
+    name: infra_prometheus_data
+  infra_grafana_data:
+    name: infra_grafana_data
+
+configs:
+  prometheus:
+    content: |
+      global:
+        scrape_interval: 15s
+        evaluation_interval: 15s
+
+      scrape_configs:
+        - job_name: tempo
+          static_configs:
+            - targets: ["tempo:3200"]
+        - job_name: alloy
+          static_configs:
+            - targets: ["alloy:12345"]
+        - job_name: orderpay-server
+          static_configs:
+            - targets: ["orderpay-server:${SERVER_DEBUG_PORT}"]

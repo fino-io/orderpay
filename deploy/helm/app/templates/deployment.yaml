@@ -1,0 +1,102 @@
+{{- if and .Values.sqlite.enabled (ne (int .Values.replicaCount) 1) }}
+{{- fail "SQLite requires replicaCount=1" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fino.fullname" . }}-server
+  labels:
+    {{- include "fino.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  {{- if .Values.sqlite.enabled }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "fino.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "fino.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 65534
+      containers:
+        - name: server
+          image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          workingDir: {{ if .Values.sqlite.enabled }}/app/data{{ else }}/app{{ end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.http }}
+            - name: grpc
+              containerPort: {{ .Values.ports.grpc }}
+            - name: debug
+              containerPort: {{ .Values.ports.debug }}
+          env:
+            {{- $env := merge (dict
+              "CONFIG_PATH" "/app/configs"
+              "SERVER_HTTP_PORT" (printf "%v" .Values.ports.http)
+              "SERVER_GRPC_PORT" (printf "%v" .Values.ports.grpc)
+              "SERVER_DEBUG_PORT" (printf "%v" .Values.ports.debug)
+            ) .Values.env }}
+            {{- range $key, $value := $env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if .Values.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.existingSecret | quote }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: debug
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: debug
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: debug
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+              readOnly: true
+            {{- if .Values.sqlite.enabled }}
+            - name: data
+              mountPath: /app/data
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "fino.fullname" . }}-config
+        {{- if .Values.sqlite.enabled }}
+        - name: data
+          {{- if .Values.sqlite.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.sqlite.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}

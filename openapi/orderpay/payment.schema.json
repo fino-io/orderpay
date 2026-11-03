@@ -1,0 +1,62 @@
+{
+  "title": "orderpay.Payment",
+  "type": "object",
+  "properties": {
+    "amountMinor": {
+      "type": "string",
+      "format": "int64"
+    },
+    "channelAccountId": {
+      "type": "string"
+    },
+    "checkAttempts": {
+      "type": "integer",
+      "format": "int32"
+    },
+    "createTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "id": {
+      "type": "string"
+    },
+    "mandateReference": {
+      "type": "string"
+    },
+    "merchantId": {
+      "type": "string"
+    },
+    "nextCheckAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "orderId": {
+      "type": "string"
+    },
+    "providerReference": {
+      "type": "string"
+    },
+    "reasonCode": {
+      "type": "string"
+    },
+    "retryDeadlineAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "$ref": "#/components/schemas/orderpay.PaymentStatus"
+    },
+    "submitAttempts": {
+      "type": "integer",
+      "format": "int32"
+    },
+    "submittedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updateTime": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

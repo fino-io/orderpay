@@ -1,0 +1,30 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fino.fullname" . }}-frontend
+  labels:
+    {{- include "fino.labels" . | nindent 4 }}
+data:
+  Caddyfile: |
+    :80 {
+      log {
+        output stdout
+        format json
+      }
+      encode zstd gzip
+      @api path {{ .Values.frontend.apiPrefix }} {{ .Values.frontend.apiPrefix }}/*
+      handle @api {
+        reverse_proxy {{ include "fino.fullname" . }}-server:{{ .Values.ports.http }}
+      }
+      @assets path /assets/*
+      header @assets Cache-Control "public, max-age=31536000, immutable"
+      @documents not path /assets/* {{ .Values.frontend.apiPrefix }} {{ .Values.frontend.apiPrefix }}/*
+      header @documents Cache-Control "no-cache"
+      handle {
+        root * /usr/share/caddy
+        try_files {path} {path}/ /index.html
+        file_server
+      }
+    }
+{{- end }}

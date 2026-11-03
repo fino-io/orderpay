@@ -1,0 +1,17 @@
+# Project-owned deployment settings; runtime YAML stays in backend/configs/.
+nameOverride: orderpay
+existingSecret: orderpay-runtime
+server:
+  configKey: orderpayServer
+image:
+  repository: orderpay/orderpay-server
+  tag: latest-amd64
+
+sqlite:
+  enabled: true
+
+frontend:
+  image:
+    repository: orderpay/orderpay-frontend
+    tag: latest-amd64
+  apiPrefix: /orderpay/v1

@@ -1,0 +1,389 @@
+openapi: 3.0.3
+info:
+  title: 商户身份只取鉴权上下文。订单号与订单ID分别保证创建和支付幂等。
+  version: 1.0.0
+paths:
+  /orderpay/v1/admin/audit-events:
+    get:
+      operationId: ListAuditEvents
+      parameters:
+        - name: merchantId
+          in: query
+          schema:
+            type: string
+            format: uuid
+            maxLength: 36
+        - name: resourceId
+          in: query
+          schema:
+            type: string
+            format: uuid
+            maxLength: 36
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+        - name: pageToken
+          in: query
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/orderpay.v1.ListAuditEventsResponse'
+  /orderpay/v1/orders:
+    get:
+      operationId: ListOrders
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/orderpay.OrderStatus'
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+        - name: pageToken
+          in: query
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/orderpay.v1.ListOrdersResponse'
+    post:
+      operationId: CreateOrder
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/orderpay.v1.OrderInput'
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/orderpay.v1.CreateOrderResponse'
+  /orderpay/v1/orders/{order_id}:
+    get:
+      operationId: GetOrder
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            maxLength: 36
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/orderpay.v1.GetOrderResponse'
+  /orderpay/v1/orders/{order_id}/payments:
+    post:
+      operationId: CreatePayment
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            maxLength: 36
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/orderpay.v1.PaymentInput'
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/orderpay.v1.CreatePaymentResponse'
+  /orderpay/v1/orders/{order_id}:cancel:
+    post:
+      operationId: CancelOrder
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            maxLength: 36
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/orderpay.v1.CancelOrderResponse'
+components:
+  schemas:
+    orderpay.OrderStatus:
+      title: orderpay.OrderStatus
+      type: string
+      enum:
+        - ORDER_STATUS_UNSPECIFIED
+        - ORDER_STATUS_PENDING_PAYMENT
+        - ORDER_STATUS_PAID
+        - ORDER_STATUS_CANCELLED
+    orderpay.PaymentStatus:
+      title: orderpay.PaymentStatus
+      type: string
+      enum:
+        - PAYMENT_STATUS_UNSPECIFIED
+        - PAYMENT_STATUS_CREATED
+        - PAYMENT_STATUS_PENDING
+        - PAYMENT_STATUS_SUCCEEDED
+        - PAYMENT_STATUS_DECLINED
+    orderpay.v1.AuditEventView:
+      title: orderpay.v1.AuditEventView
+      type: object
+      properties:
+        action:
+          type: string
+        actorId:
+          type: string
+        afterStatus:
+          type: string
+        beforeStatus:
+          type: string
+        createTime:
+          type: string
+          format: date-time
+        evidenceReference:
+          description: 仅管理员可见的受控证据引用，不包含凭证或原始支付报文。
+          type: string
+        id:
+          type: string
+        merchantId:
+          type: string
+        reasonCode:
+          type: string
+        requestId:
+          type: string
+        resourceId:
+          type: string
+    orderpay.v1.CancelOrderRequest:
+      title: orderpay.v1.CancelOrderRequest
+      description: 可撤销未准备提交的CREATED支付；与首次提交在同一写事务规则下互斥。
+      type: object
+      properties:
+        orderId:
+          type: string
+          format: uuid
+          maxLength: 36
+      required:
+        - orderId
+    orderpay.v1.CancelOrderResponse:
+      title: orderpay.v1.CancelOrderResponse
+      type: object
+      properties:
+        order:
+          $ref: '#/components/schemas/orderpay.v1.OrderView'
+    orderpay.v1.CreateOrderRequest:
+      title: orderpay.v1.CreateOrderRequest
+      description: 同商户订单号、同内容返回已有订单；内容不同返回ORDER_CONFLICT。
+      type: object
+      properties:
+        order:
+          $ref: '#/components/schemas/orderpay.v1.OrderInput'
+      required:
+        - order
+    orderpay.v1.CreateOrderResponse:
+      title: orderpay.v1.CreateOrderResponse
+      type: object
+      properties:
+        order:
+          $ref: '#/components/schemas/orderpay.v1.OrderView'
+    orderpay.v1.CreatePaymentRequest:
+      title: orderpay.v1.CreatePaymentRequest
+      description: 每单只受理一个支付意图；同授权重放返回现有支付，换授权返回PAYMENT_CONFLICT。
+      type: object
+      properties:
+        orderId:
+          type: string
+          format: uuid
+          maxLength: 36
+        payment:
+          $ref: '#/components/schemas/orderpay.v1.PaymentInput'
+      required:
+        - orderId
+        - payment
+    orderpay.v1.CreatePaymentResponse:
+      title: orderpay.v1.CreatePaymentResponse
+      type: object
+      properties:
+        payment:
+          $ref: '#/components/schemas/orderpay.v1.PaymentView'
+    orderpay.v1.GetOrderRequest:
+      title: orderpay.v1.GetOrderRequest
+      type: object
+      properties:
+        orderId:
+          type: string
+          format: uuid
+          maxLength: 36
+      required:
+        - orderId
+    orderpay.v1.GetOrderResponse:
+      title: orderpay.v1.GetOrderResponse
+      type: object
+      properties:
+        order:
+          $ref: '#/components/schemas/orderpay.v1.OrderView'
+        payment:
+          $ref: '#/components/schemas/orderpay.v1.PaymentView'
+    orderpay.v1.ListAuditEventsRequest:
+      title: orderpay.v1.ListAuditEventsRequest
+      description: 管理员接口；游标绑定商户、资源等完整过滤条件。
+      type: object
+      properties:
+        merchantId:
+          type: string
+          format: uuid
+          maxLength: 36
+        pageSize:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        pageToken:
+          type: string
+          maxLength: 512
+        resourceId:
+          type: string
+          format: uuid
+          maxLength: 36
+    orderpay.v1.ListAuditEventsResponse:
+      title: orderpay.v1.ListAuditEventsResponse
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/orderpay.v1.AuditEventView'
+        nextPageToken:
+          type: string
+    orderpay.v1.ListOrdersRequest:
+      title: orderpay.v1.ListOrdersRequest
+      type: object
+      properties:
+        pageSize:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        pageToken:
+          type: string
+          maxLength: 512
+        status:
+          $ref: '#/components/schemas/orderpay.OrderStatus'
+    orderpay.v1.ListOrdersResponse:
+      title: orderpay.v1.ListOrdersResponse
+      type: object
+      properties:
+        nextPageToken:
+          type: string
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/orderpay.v1.OrderView'
+    orderpay.v1.OrderInput:
+      title: orderpay.v1.OrderInput
+      type: object
+      properties:
+        amountMinor:
+          description: 金额单位固定为人民币分。
+          type: string
+          format: int64
+        description:
+          type: string
+          maxLength: 200
+        merchantOrderNo:
+          type: string
+          maxLength: 128
+      required:
+        - merchantOrderNo
+        - amountMinor
+        - description
+    orderpay.v1.OrderView:
+      title: orderpay.v1.OrderView
+      type: object
+      properties:
+        amountMinor:
+          description: 金额单位固定为人民币分。
+          type: string
+          format: int64
+        createTime:
+          type: string
+          format: date-time
+        description:
+          type: string
+        id:
+          type: string
+        merchantOrderNo:
+          type: string
+        status:
+          $ref: '#/components/schemas/orderpay.OrderStatus'
+        updateTime:
+          type: string
+          format: date-time
+    orderpay.v1.PaymentInput:
+      title: orderpay.v1.PaymentInput
+      description: 仅支持上游已签约授权代扣，不接收卡号、签约凭证原文或通用JSON。
+      type: object
+      properties:
+        mandateReference:
+          type: string
+          maxLength: 128
+      required:
+        - mandateReference
+    orderpay.v1.PaymentView:
+      title: orderpay.v1.PaymentView
+      type: object
+      properties:
+        amountMinor:
+          description: 本次支付受理时的人民币分金额快照。
+          type: string
+          format: int64
+        createTime:
+          type: string
+          format: date-time
+        id:
+          type: string
+        orderId:
+          type: string
+        providerReference:
+          type: string
+        reasonCode:
+          description: 服务端定义的脱敏原因码；空值表示无异常，不透传渠道错误。
+          type: string
+        status:
+          $ref: '#/components/schemas/orderpay.PaymentStatus'
+        updateTime:
+          type: string
+          format: date-time

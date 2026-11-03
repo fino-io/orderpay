@@ -1,0 +1,33 @@
+{
+  "title": "orderpay.Order",
+  "type": "object",
+  "properties": {
+    "amountMinor": {
+      "type": "string",
+      "format": "int64"
+    },
+    "createTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "description": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "merchantId": {
+      "type": "string"
+    },
+    "merchantOrderNo": {
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/orderpay.OrderStatus"
+    },
+    "updateTime": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
