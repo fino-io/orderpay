@@ -15,7 +15,8 @@ message CallbackReceipt {
   string channel_account_id = 3 [(fino.db) = {len: 128 comment: "已确认的渠道账户引用" unique_index: "idx_callback_event"}];
   string event_id = 4 [(fino.db) = {len: 200 comment: "渠道事件标识，用于回调去重" unique_index: "idx_callback_event"}];
   string payment_id = 5 [(fino.db) = {len: 36 comment: "关联支付 UUID"}];
-  string payload_digest = 6 [(fino.db) = {len: 64 comment: "原始回调报文SHA256摘要，不保存原文"}];
+  string payload_digest = 6 [(fino.db) = {len: 64 comment: "首次接收原始报文的SHA256摘要，仅供追溯，不作为业务判重依据"}];
+  string event_hash = 7 [(fino.db) = {len: 64 comment: "已验签业务结果的规范化SHA256摘要，用于同事件内容一致性校验"}];
 
   fino.core.Timestamp create_time = 98 [(fino.db) = {comment: "创建时间，UTC"}];
 }

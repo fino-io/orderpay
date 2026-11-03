@@ -43,12 +43,12 @@ service OrderpayService {
   rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse) {
     option (google.api.http) = {get: "/orderpay/v1/admin/audit-events"};
   }
-
 }
 
 // 幂等键使用显式请求字段，HTTP/gRPC一致；不要同时接受另一套header键。
 message CreateOrderRequest {
   string idempotency_key = 1 [(fino.validate) = {required: true max: 128}];
+  // 同一商户订单号改用新键提交，返回ORDER_EXISTS，不创建幂等别名。
   OrderInput order = 2 [(fino.validate) = {required: true}];
 }
 
@@ -103,6 +103,7 @@ message CancelOrderResponse {
 }
 
 // 金额、商户、渠道、支付状态全部由服务端确定。
+// 同一订单改用新键提交，返回PAYMENT_EXISTS；同键异参返回IDEMPOTENCY_CONFLICT。
 message CreatePaymentRequest {
   string order_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
   string idempotency_key = 2 [(fino.validate) = {required: true max: 128}];

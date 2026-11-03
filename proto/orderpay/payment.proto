@@ -25,6 +25,7 @@ message Payment {
   int32 check_attempts = 12 [(fino.db) = {comment: "累计查询次数，手动对账和重启不重置"}];
   string last_reason_code = 13 [(fino.db) = {len: 64 comment: "最近一次脱敏故障或转人工原因码"}];
   int64 version = 14 [(fino.db) = {comment: "条件更新版本号"}];
+  fino.core.Timestamp resubmit_deadline_at = 15 [(fino.db) = {null: true comment: "首次提交前确定的保守补发截止时间，未设置或已过期均禁止自动补发"}];
 
   fino.core.Timestamp create_time = 98 [(fino.db) = {comment: "创建时间，UTC"}];
   fino.core.Timestamp update_time = 99 [(fino.db) = {comment: "最后更新时间，UTC"}];
