@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package orderpay;
 
-
 option go_package = "github.com/fino-io/orderpay/go/orderpay;orderpay";
 
 enum OrderStatus {

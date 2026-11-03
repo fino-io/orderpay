@@ -11,9 +11,9 @@ message CallbackReceipt {
   option (fino.model) = {generate: true services: "OrderpayService"};
 
   string id = 1 [(fino.db) = {len: 36 comment: "主键，UUIDv7"}];
-  string channel = 2 [(fino.db) = {len: 64 comment: "已验签渠道标识"}];
-  string channel_account_id = 3 [(fino.db) = {len: 128 comment: "已确认的渠道账户引用"}];
-  string event_id = 4 [(fino.db) = {len: 200 comment: "渠道事件标识，用于回调去重"}];
+  string channel = 2 [(fino.db) = {len: 64 comment: "已验签渠道标识" unique_index: "idx_callback_event"}];
+  string channel_account_id = 3 [(fino.db) = {len: 128 comment: "已确认的渠道账户引用" unique_index: "idx_callback_event"}];
+  string event_id = 4 [(fino.db) = {len: 200 comment: "渠道事件标识，用于回调去重" unique_index: "idx_callback_event"}];
   string payment_id = 5 [(fino.db) = {len: 36 comment: "关联支付 UUID"}];
   string payload_digest = 6 [(fino.db) = {len: 64 comment: "原始回调报文SHA256摘要，不保存原文"}];
 

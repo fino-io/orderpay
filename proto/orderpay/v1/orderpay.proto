@@ -44,9 +44,6 @@ service OrderpayService {
     option (google.api.http) = {get: "/orderpay/v1/admin/audit-events"};
   }
 
-  rpc HandlePaymentNotification(HandlePaymentNotificationRequest) returns (HandlePaymentNotificationResponse) {
-    // 仅供已验签的渠道传输适配器调用，不提供通用HTTP绑定；禁止普通商户调用。
-  }
 }
 
 // 幂等键使用显式请求字段，HTTP/gRPC一致；不要同时接受另一套header键。
@@ -123,7 +120,8 @@ message PaymentView {
   string currency = 4;
   orderpay.PaymentStatus status = 5;
   string provider_reference = 6;
-  fino.core.Timestamp next_check_at = 7;
+  reserved 7;
+  reserved "next_check_at";
   fino.core.Timestamp create_time = 98;
   fino.core.Timestamp update_time = 99;
 }
@@ -140,7 +138,8 @@ message ReconcilePaymentRequest {
   string payment_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
 }
 
-// 仅提前安排下一次对账，不直接发起渠道扣款；终态直接返回。
+// 复用后台对账规则；不重置预算、不绕过冷却时间、不直接发起扣款。
+// CREATED保持原计划，终态直接返回。
 message ReconcilePaymentResponse {
   PaymentView payment = 1;
 }
@@ -169,21 +168,4 @@ message AuditEventView {
   string after_status = 8;
   string reason_code = 9;
   fino.core.Timestamp create_time = 98;
-}
-
-// 仅接收可信传输适配器验签后的归一化结果；身份权限检查仍由服务端执行。
-message HandlePaymentNotificationRequest {
-  string channel = 1 [(fino.validate) = {required: true max: 64}];
-  string channel_account_id = 2 [(fino.validate) = {required: true max: 128}];
-  string event_id = 3 [(fino.validate) = {required: true max: 200}];
-  string payment_id = 4 [(fino.validate) = {required: true max: 36 uuid: true}];
-  orderpay.PaymentStatus status = 5 [(fino.validate) = {required: true oneof: "5 6"}];
-  int64 amount_minor = 6 [(fino.validate) = {required: true min: 1 max: 100000000}];
-  string currency = 7 [(fino.validate) = {required: true oneof: "CNY"}];
-  string provider_reference = 8 [(fino.validate) = {required: true max: 200}];
-  string payload_digest = 9 [(fino.validate) = {required: true len: 64}];
-}
-
-message HandlePaymentNotificationResponse {
-  bool duplicate = 1;
 }

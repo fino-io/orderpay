@@ -11,9 +11,9 @@ message IdempotencyRecord {
   option (fino.model) = {generate: true services: "OrderpayService"};
 
   string id = 1 [(fino.db) = {len: 36 comment: "主键，UUIDv7"}];
-  string merchant_id = 2 [(fino.db) = {len: 36 comment: "鉴权上下文中的商户 UUID"}];
-  string operation = 3 [(fino.db) = {len: 32 comment: "幂等操作，create_order或create_payment"}];
-  string key_digest = 4 [(fino.db) = {len: 64 comment: "调用方幂等键的SHA256摘要"}];
+  string merchant_id = 2 [(fino.db) = {len: 36 comment: "鉴权上下文中的商户 UUID" unique_index: "idx_idempotency_scope"}];
+  string operation = 3 [(fino.db) = {len: 32 comment: "幂等操作，create_order或create_payment" unique_index: "idx_idempotency_scope"}];
+  string key_digest = 4 [(fino.db) = {len: 64 comment: "调用方幂等键的SHA256摘要" unique_index: "idx_idempotency_scope"}];
   string request_hash = 5 [(fino.db) = {len: 64 comment: "规范化业务参数的SHA256摘要"}];
   string resource_id = 6 [(fino.db) = {len: 36 comment: "已受理订单或支付 UUID"}];
 

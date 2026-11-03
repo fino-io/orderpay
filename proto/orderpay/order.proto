@@ -12,8 +12,8 @@ message Order {
   option (fino.model) = {generate: true services: "OrderpayService"};
 
   string id = 1 [(fino.db) = {len: 36 comment: "主键，服务端生成 UUIDv7"}];
-  string merchant_id = 2 [(fino.db) = {len: 36 comment: "鉴权上下文中的商户 UUID"}];
-  string merchant_order_no = 3 [(fino.db) = {len: 128 comment: "商户业务订单号"}];
+  string merchant_id = 2 [(fino.db) = {len: 36 comment: "鉴权上下文中的商户 UUID" unique_index: "idx_order_merchant_no"}];
+  string merchant_order_no = 3 [(fino.db) = {len: 128 comment: "商户业务订单号" unique_index: "idx_order_merchant_no"}];
   int64 amount_minor = 4 [(fino.db) = {comment: "金额，单位分，范围1至100000000"}];
   string currency = 5 [(fino.db) = {len: 3 comment: "币种，本期仅CNY"}];
   OrderStatus status = 6 [(fino.db) = {comment: "订单状态，领域层控制转换"}];
