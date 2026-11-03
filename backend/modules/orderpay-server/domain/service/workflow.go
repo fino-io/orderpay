@@ -19,16 +19,16 @@ type WriteLimiter interface {
 }
 
 type Workflow struct {
-	writes   WriteLimiter
 	store    repo.WorkflowStore
 	mandates MandateVerifier
+	writes   WriteLimiter
 }
 
 func NewWorkflow(store repo.WorkflowStore, mandates MandateVerifier, writes WriteLimiter) *Workflow {
 	return &Workflow{
 		store:    store,
-		writes:   writes,
 		mandates: mandates,
+		writes:   writes,
 	}
 }
 
@@ -36,6 +36,7 @@ func (s *Workflow) allowWrite(ctx context.Context, merchant string) error {
 	if s.writes == nil {
 		return model.ErrUnavailable
 	}
+
 	allowed, err := s.writes.Allow(ctx, merchant)
 	if err != nil {
 		return err
@@ -61,11 +62,20 @@ func (s *Workflow) audit(ctx context.Context, tx repo.WorkflowTx, action, resour
 	if err != nil {
 		return err
 	}
+
 	return tx.AppendAudit(event)
 }
 
 func (s *Workflow) CreateOrder(ctx context.Context, input model.CreateOrderInput) (*model.Order, error) {
-	if input.MerchantOrderNo == "" || utf8.RuneCountInString(input.MerchantOrderNo) > 128 || input.AmountMinor < 1 || input.AmountMinor > 100000000 || input.Description == "" || utf8.RuneCountInString(input.Description) > 200 {
+	if input.MerchantOrderNo == "" || utf8.RuneCountInString(input.MerchantOrderNo) > 128 {
+		return nil, core.NewBadRequestError("invalid merchant order number")
+	}
+
+	if input.AmountMinor < 1 || input.AmountMinor > 100000000 {
+		return nil, core.NewBadRequestError("invalid order amount")
+	}
+
+	if input.Description == "" || utf8.RuneCountInString(input.Description) > 200 {
 		return nil, core.NewBadRequestError("invalid order input")
 	}
 
@@ -104,7 +114,7 @@ func (s *Workflow) CreateOrder(ctx context.Context, input model.CreateOrderInput
 func (s *Workflow) GetOrder(ctx context.Context, id string) (*model.Order, *model.Payment, error) {
 	var order *model.Order
 	var payment *model.Payment
-	err := s.store.Transaction(ctx, func(tx repo.WorkflowTx) error {
+	err := s.store.View(ctx, func(tx repo.WorkflowReader) error {
 		var err error
 		merchant := model.PrincipalFrom(ctx).MerchantID
 		order, err = tx.Order(merchant, id)
@@ -136,52 +146,37 @@ func (s *Workflow) CancelOrder(ctx context.Context, id string) (*model.Order, er
 		if order.Status() == pb.OrderStatus_ORDER_STATUS_CANCELLED {
 			return nil
 		}
-		if order.Status() != pb.OrderStatus_ORDER_STATUS_PENDING_PAYMENT {
-			return model.ErrConflict
+
+		before := order.Status().String()
+		if err := order.Cancel(); err != nil {
+			return err
 		}
 		payment, err := tx.Payment(merchant, id)
 		if err != nil && !core.IsNotFoundError(err) {
 			return err
 		}
+		cancelPayment := payment != nil && payment.Status() == pb.PaymentStatus_PAYMENT_STATUS_CREATED
+		if payment != nil {
+			if err := payment.Cancel(); err != nil {
+				return err
+			}
+		}
 		if err := s.allowWrite(ctx, merchant); err != nil {
 			return err
 		}
 
-		if payment != nil {
-			if payment.ReasonCode() == "CHANNEL_RESULT_CONFLICT" || payment.ReasonCode() == "COMPENSATION_REQUIRED" || payment.ReasonCode() == "RECONCILIATION_REQUIRED" {
-				return model.ErrConflict
+		if cancelPayment {
+			if err := tx.SavePayment(payment); err != nil {
+				return err
 			}
-			switch payment.Status() {
-			case pb.PaymentStatus_PAYMENT_STATUS_CREATED:
-				snapshot := payment.Snapshot()
-				if snapshot.SubmitAttempts != 0 || snapshot.SubmittedAt != nil {
-					return model.ErrConflict
-				}
-				before := snapshot.Status.String()
-				snapshot.Status = pb.PaymentStatus_PAYMENT_STATUS_DECLINED
-				snapshot.ReasonCode = "ORDER_CANCELLED"
-				snapshot.NextCheckAt = nil
-				snapshot.UpdateTime = core.Now()
-				if err := tx.SavePayment(model.RebuildPayment(snapshot)); err != nil {
-					return err
-				}
-				if err := s.audit(ctx, tx, "PAYMENT_CANCELLED", string(payment.ID()), before, snapshot.Status.String(), "ORDER_CANCELLED"); err != nil {
-					return err
-				}
-			case pb.PaymentStatus_PAYMENT_STATUS_DECLINED:
-			default:
-				return model.ErrConflict
+			if err := s.audit(ctx, tx, "PAYMENT_CANCELLED", string(payment.ID()), pb.PaymentStatus_PAYMENT_STATUS_CREATED.String(), payment.Status().String(), payment.ReasonCode()); err != nil {
+				return err
 			}
 		}
-		snapshot := order.Snapshot()
-		before := snapshot.Status.String()
-		snapshot.Status = pb.OrderStatus_ORDER_STATUS_CANCELLED
-		snapshot.UpdateTime = core.Now()
-		result = model.RebuildOrder(snapshot)
-		if err := tx.SaveOrder(result); err != nil {
+		if err := tx.SaveOrder(order); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, "ORDER_CANCELLED", id, before, snapshot.Status.String(), "")
+		return s.audit(ctx, tx, "ORDER_CANCELLED", id, before, order.Status().String(), "")
 	})
 	return result, err
 }

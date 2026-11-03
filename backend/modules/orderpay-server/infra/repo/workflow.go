@@ -32,10 +32,23 @@ func NewWorkflowStore(db *gorm.DB, codec *pagination.CursorCodec) *WorkflowStore
 }
 
 func (s *WorkflowStore) Transaction(ctx context.Context, fn func(domainrepo.WorkflowTx) error) error {
+	return s.transaction(ctx, "BEGIN IMMEDIATE", func(tx *workflowTx) error {
+		return fn(tx)
+	})
+}
+
+func (s *WorkflowStore) View(ctx context.Context, fn func(domainrepo.WorkflowReader) error) error {
+	return s.transaction(ctx, "BEGIN", func(tx *workflowTx) error {
+		return fn(tx)
+	})
+}
+
+func (s *WorkflowStore) transaction(ctx context.Context, begin string, fn func(*workflowTx) error) error {
 	return s.db.WithContext(ctx).Connection(func(conn *gorm.DB) (txErr error) {
-		if err := conn.Exec("BEGIN IMMEDIATE").Error; err != nil {
+		if err := conn.Exec(begin).Error; err != nil {
 			return err
 		}
+
 		committed := false
 		defer func() {
 			if !committed {
@@ -44,9 +57,11 @@ func (s *WorkflowStore) Transaction(ctx context.Context, fn func(domainrepo.Work
 				txErr = errors.Join(txErr, conn.WithContext(cleanupCtx).Exec("ROLLBACK").Error)
 			}
 		}()
+
 		if err := fn(&workflowTx{db: conn.Session(&gorm.Session{SkipDefaultTransaction: true})}); err != nil {
 			return err
 		}
+
 		if err := conn.Exec("COMMIT").Error; err != nil {
 			return err
 		}
@@ -110,6 +125,7 @@ func (s *WorkflowStore) Orders(ctx context.Context, merchant string, query model
 	if err != nil {
 		return model.ListOrderResult{}, core.NewBadRequestError("invalid page token")
 	}
+
 	q := s.db.WithContext(ctx).Where("merchant_id = ?", merchant)
 	if query.Filter.Status != 0 {
 		q = q.Where("status = ?", query.Filter.Status)
@@ -121,10 +137,12 @@ func (s *WorkflowStore) Orders(ctx context.Context, merchant string, query model
 		}
 		q = q.Where("create_time > ? OR (create_time = ? AND id > ?)", anchor.CreateTime, anchor.CreateTime, after)
 	}
+
 	var rows []*record.Order
 	if err := q.Order("create_time ASC, id ASC").Limit(size + 1).Find(&rows).Error; err != nil {
 		return model.ListOrderResult{}, err
 	}
+
 	next := ""
 	if len(rows) > size {
 		rows = rows[:size]
@@ -151,6 +169,7 @@ func (s *WorkflowStore) Audits(ctx context.Context, merchant, resource string, r
 	if err != nil {
 		return model.ListAuditEventResult{}, core.NewBadRequestError("invalid page token")
 	}
+
 	q := s.db.WithContext(ctx).Model(&record.AuditEvent{})
 	if merchant != "" {
 		q = q.Where("merchant_id = ?", merchant)
@@ -172,10 +191,12 @@ func (s *WorkflowStore) Audits(ctx context.Context, merchant, resource string, r
 		}
 		q = q.Where("create_time > ? OR (create_time = ? AND id > ?)", anchor.CreateTime, anchor.CreateTime, after)
 	}
+
 	var rows []*record.AuditEvent
 	if err := q.Order("create_time ASC, id ASC").Limit(size + 1).Find(&rows).Error; err != nil {
 		return model.ListAuditEventResult{}, err
 	}
+
 	next := ""
 	if len(rows) > size {
 		rows = rows[:size]

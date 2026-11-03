@@ -323,3 +323,63 @@ func TestCancellationDoesNotLeaveSQLiteTransactionOpen(t *testing.T) {
 	_, err = server.CreateOrder(merchantContext(), createRequest("after-cancellation"))
 	require.NoError(t, err)
 }
+
+func TestOrderDetailReadsWhileAnotherConnectionHoldsWriteLock(t *testing.T) {
+	server, _, database := fixture(t)
+	created, err := server.CreateOrder(merchantContext(), createRequest("read-during-write"))
+	require.NoError(t, err)
+
+	var sequence int
+	var name, path string
+	require.NoError(t, database.Raw("PRAGMA database_list").Row().Scan(&sequence, &name, &path))
+	writer, err := gorm.Open(sqlite.Open(path+"?_busy_timeout=100"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	pool, err := writer.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pool.Close()) })
+	require.NoError(t, writer.Exec("BEGIN IMMEDIATE").Error)
+	defer func() { require.NoError(t, writer.Exec("ROLLBACK").Error) }()
+
+	ctx, cancel := context.WithTimeout(merchantContext(), time.Second)
+	defer cancel()
+	detail, err := server.GetOrder(ctx, &api.GetOrderRequest{OrderId: created.Order.Id})
+	require.NoError(t, err)
+	require.Equal(t, created.Order.Id, detail.Order.Id)
+}
+
+func TestCancelRejectsPreparedPaymentAndOpenReconciliation(t *testing.T) {
+	for _, reason := range []string{"prepared", "CHANNEL_RESULT_CONFLICT", "COMPENSATION_REQUIRED", "RECONCILIATION_REQUIRED"} {
+		t.Run(reason, func(t *testing.T) {
+			server, _, database := fixture(t)
+			created, err := server.CreateOrder(merchantContext(), createRequest("blocked-cancel"))
+			require.NoError(t, err)
+			payment := record.Payment{
+				ID:               model.PaymentID("019a4a70-0000-7000-8000-000000000003"),
+				MerchantId:       merchantID,
+				OrderId:          created.Order.Id,
+				AmountMinor:      1990,
+				MandateReference: "test-mandate",
+				ChannelAccountId: "test-account",
+				Status:           pb.PaymentStatus_PAYMENT_STATUS_CREATED,
+				CreateTime:       core.Now(),
+				UpdateTime:       core.Now(),
+			}
+			if reason == "prepared" {
+				payment.SubmittedAt = core.Now()
+				payment.SubmitAttempts = 1
+			} else {
+				payment.Status = pb.PaymentStatus_PAYMENT_STATUS_DECLINED
+				payment.ReasonCode = reason
+			}
+			require.NoError(t, database.Create(&payment).Error)
+
+			_, err = server.CancelOrder(merchantContext(), &api.CancelOrderRequest{OrderId: created.Order.Id})
+			require.Error(t, err)
+			detail, err := server.GetOrder(merchantContext(), &api.GetOrderRequest{OrderId: created.Order.Id})
+			require.NoError(t, err)
+			require.Equal(t, pb.OrderStatus_ORDER_STATUS_PENDING_PAYMENT, detail.Order.Status)
+		})
+	}
+}

@@ -74,15 +74,6 @@ func serve(ctx context.Context, cfg nserver.Config) error {
 }
 
 func buildServer(deps infra) (pb.OrderpayServiceServer, error) {
-	if err := migrateSchema(deps.DB); err != nil {
-		return nil, err
-	}
-
-	store := infrarepo.NewWorkflowStore(deps.DB.NewSession(context.Background()), deps.Pagination)
-	if err := store.Initialize(); err != nil {
-		return nil, err
-	}
-
 	credentials, err := auth.Load()
 	if err != nil {
 		return nil, err
@@ -104,6 +95,15 @@ func buildServer(deps infra) (pb.OrderpayServiceServer, error) {
 	}
 	writeLimiter, err := ratelimit.NewLocalKeyedRateLimiter(limits.WriteEvery, limits.Burst, limits.MaxKeys, limits.TTL)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := migrateSchema(deps.DB); err != nil {
+		return nil, err
+	}
+
+	store := infrarepo.NewWorkflowStore(deps.DB.NewSession(context.Background()), deps.Pagination)
+	if err := store.Initialize(); err != nil {
 		return nil, err
 	}
 
