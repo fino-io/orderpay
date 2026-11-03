@@ -28,7 +28,7 @@ service OrderpayService {
   }
 
   rpc CreatePayment(CreatePaymentRequest) returns (CreatePaymentResponse) {
-    option (google.api.http) = {post: "/orderpay/v1/orders/{order_id}/payments"};
+    option (google.api.http) = {post: "/orderpay/v1/orders/{order_id}/payments" body: "payment"};
   }
 
   rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse) {
@@ -78,6 +78,10 @@ message PaymentView {
   string order_id = 2;
   orderpay.PaymentStatus status = 3;
   string provider_reference = 4;
+  // 本次支付受理时的人民币分金额快照。
+  int64 amount_minor = 5;
+  // 服务端定义的脱敏原因码；空值表示无异常，不透传渠道错误。
+  string reason_code = 6;
   fino.core.Timestamp create_time = 98;
   fino.core.Timestamp update_time = 99;
 }
@@ -101,13 +105,19 @@ message CancelOrderResponse {
   OrderView order = 1;
 }
 
-// 每单只受理一笔支付；重复请求返回该支付的当前状态，不再次扣款。
+// 每单只受理一个支付意图；同授权重放返回现有支付，换授权返回PAYMENT_CONFLICT。
 message CreatePaymentRequest {
   string order_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
+  PaymentInput payment = 2 [(fino.validate) = {required: true}];
 }
 
 message CreatePaymentResponse {
   PaymentView payment = 1;
+}
+
+// 仅支持上游已签约授权代扣，不接收卡号、签约凭证原文或通用JSON。
+message PaymentInput {
+  string mandate_reference = 1 [(fino.validate) = {required: true max: 128}];
 }
 
 // 管理员接口；游标绑定商户、资源等完整过滤条件。

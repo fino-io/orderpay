@@ -1,12 +1,12 @@
 # 支付 / 订单服务架构（Fino + SQLite）
 
-这是全新契约设计，不考虑旧API、字段编号或存量数据兼容。尚未实现后端；`proto/` 是API唯一事实来源。
+本方案为全新契约，不考虑旧兼容。保留三个模型、六个RPC、四个支付状态，尚未实现后端；proto是API唯一事实来源。
 
 ## 1. 范围与结构
 
-一个 `OrderpayService`，Go/Fino + 本机SQLite，单机单活动进程。API、支付扫描和渠道回调共用领域用例，无缓存、消息中间件或独立任务服务。
+一个OrderpayService，Go/Fino + 本机SQLite，单机单活动进程。API、支付扫描和渠道回调共用领域用例，无缓存、消息中间件或独立任务服务。
 
-商户后端负责定价。金额统一为人民币分，每单全额支付一次；订单内容创建后不可修改，拒付后可取消，重新购买创建新订单。退款、库存、分账、多币种和自动补扣不在范围内。
+本期仅支持**上游已签约授权代扣**：商户提供mandate_reference，本服务校验授权归属、有效性及渠道账户绑定，不自行管理签约或保存凭证原文。商户后端负责定价，金额统一人民币分，每单全额支付。扫码、托管收银台、退款、分账、多币种和拒付后更换付款方式另行设计。
 
 ```mermaid
 flowchart LR
@@ -16,79 +16,94 @@ flowchart LR
     Scan[进程内扫描] --> Domain
     Callback[原始报文验签] --> Domain
     Domain --> DB[(infra/repo / SQLite)]
-    Domain --> Channel[限流 / 熔断 / 渠道SDK]
+    Domain --> Channel[能力契约 / 限流 / 熔断 / 渠道SDK]
 ```
 
-遵循Fino现有分层，模型与API Input/View分离。复用finokit的SQLite适配、gokit本地限流器、gobreaker及渠道官方SDK，不开放业务模型的通用写入CRUD。
+遵循Fino分层，模型与Input/View分离。复用finokit的SQLite适配、gokit限流器、gobreaker及渠道官方SDK，不开放业务模型的通用写入CRUD。
 
-## 2. 三个模型
+## 2. 三个模型与事务
 
-| 模型 | 约束 |
+| 模型 | 职责与约束 |
 | --- | --- |
-| `Order` | 唯一 `(merchant_id, merchant_order_no)`；金额1至100000000分；金额与描述不可变 |
-| `Payment` | 唯一 `order_id`；与订单商户一致；账户内非空渠道流水唯一 |
-| `AuditEvent` | 只追加：主体、动作、资源、前后状态、原因及request ID |
+| Order | 唯一 `(merchant_id, merchant_order_no)`；金额1至100000000分，内容创建后不可改 |
+| Payment | 每单一个支付意图；固定金额快照、授权引用和渠道账户；保存渠道引用及恢复进度 |
+| AuditEvent | 只追加业务变更、主体、资源、前后状态、脱敏原因和request ID |
 
-商户订单号保证订单创建幂等，订单ID保证支付受理幂等，不再设置请求幂等键或独立幂等表。同商户订单号、同金额与描述返回已有订单，内容不同返回ORDER_CONFLICT；重复支付返回唯一支付的当前状态，不再创建交易。并发唯一冲突后重读，执行同一规则。
+订单号保证创建幂等：同商户、同订单号、同内容返回现有订单，异参返回ORDER_CONFLICT。订单ID保证支付幂等：同授权重放返回现有支付，更换授权返回PAYMENT_CONFLICT。首次受理时校验上游授权并选择账户，在写事务内重读订单，复制金额快照并固定参数。渠道重试始终使用该快照，不能重新选择账户或修改请求参数。
 
-金额和币种不在Payment重复存储，渠道调用从不可变订单读取金额并固定使用CNY。channel_account_id引用稳定的渠道账户配置，受理后不可切换；支付UUID为渠道交易标识。服务端生成UUIDv7，支付和审计不软删除。
+proto声明业务唯一索引及 `(status, next_check_at)` 扫描索引。外键、CHECK、账户内渠道引用唯一索引及审计追加触发器由后续迁移落实。服务端生成UUIDv7，不软删除支付与审计。
 
-proto声明唯一索引与 `(status, next_check_at)` 调度索引。外键、金额/状态CHECK、渠道流水部分唯一索引和审计禁止UPDATE/DELETE的触发器由后续迁移实现。SQLite使用WAL、FULL同步、外键和有界busy_timeout；写池为1、读池有界，连接级配置覆盖所有连接。所有写入使用专用连接上的短 `BEGIN IMMEDIATE` 事务，事务内重读状态；网络调用在事务外，不叠加版本锁。[WAL](https://sqlite.org/wal.html)、[事务](https://sqlite.org/lang_transaction.html)
+SQLite使用WAL、FULL同步、外键及有界busy_timeout；写池为1、读池有界，连接级参数覆盖全部连接。所有写入在专用连接的短BEGIN IMMEDIATE事务中重读状态，网络调用在事务外，不叠加版本锁。[SQLite事务](https://sqlite.org/lang_transaction.html)
 
-## 3. 四个支付状态
+## 3. 四个状态与恢复
 
-订单状态为 `PENDING_PAYMENT → PAID / CANCELLED`。支付状态如下：
+订单为 `PENDING_PAYMENT → PAID / CANCELLED`；只有无支付或明确拒付时可取消。支付如下：
 
-| 状态 | 行为 |
+| 状态 | 含义 |
 | --- | --- |
-| CREATED | 已持久受理，等待首次提交 |
-| PENDING | 已准备提交、结果待确认，只允许查询或接收回调 |
-| SUCCEEDED | 渠道确认成功，订单同时改为PAID |
-| DECLINED | 渠道明确终局拒付，允许取消订单 |
+| CREATED | 已受理，尚未准备提交，等待配额 |
+| PENDING | 已准备提交，结果未确认；查询为主，按渠道能力决定是否允许同操作重试 |
+| SUCCEEDED | 渠道确认成功，订单同事务改为PAID |
+| DECLINED | 已确定未支付且不可继续；包括渠道终局拒付或首次提交前授权明确失效 |
 
-1. **受理**：同一事务检查订单、创建CREATED支付、设置next_check_at并写审计。支付记录本身就是持久待处理工作。
-2. **提交**：取得配额及熔断放行后，在短事务中重读CREATED、改为PENDING、记录submitted_at及审计；提交后调用渠道一次。SDK及HTTP层关闭自动扣款重试。
-3. **确认**：查询和回调共用确认用例，事务内校验渠道账户、交易标识、金额、币种、流水及当前状态；更新支付、订单与审计。成功须有流水，明确拒付可无流水；已确认的流水不能被替换。
-4. **恢复**：到期PENDING只查询，不再提交。超时、渠道暂无记录和查询故障都不表示拒付。终态清空调度时间，重复同结果不再修改状态，矛盾结果告警并保留原终态。
+1. **受理**：支付CREATED、金额快照、到期时间和审计同事务写入，提交后才确认受理。支付记录本身是持久待处理工作。
+2. **提交**：取得配额、首次提交前确认授权仍有效；短事务重读状态，改为PENDING、固定submitted_at与retry_deadline_at、预留submit_attempts，再调用渠道。额度不足或依赖故障延后，不伪装成已提交或业务拒付。
+3. **确认**：提交结果、查询和回调共用确认用例。校验账户、交易标识、快照金额、CNY和渠道引用；PENDING结果也保存首次获得的渠道引用。成功时支付、订单和审计同事务更新；终态清空调度时间，重复同结果不再修改，矛盾结果告警。
+4. **恢复**：PENDING优先按渠道引用或原商户交易号查询。超时、暂无记录和查询错误都不表示拒付；无法定位渠道对象时，只能在下面的安全重试条件内幂等重放，不能把缺少查询标识当作交易不存在。
 
-只有无支付或DECLINED时可取消，CREATED和PENDING均阻止取消；取消、受理和确认通过相同写事务规则串行判定。首次提交前后崩溃可能留下无法确认的PENDING，需要人工核查，不能为了恢复而自动补扣。
+渠道适配器必须明确以下能力，不默认所有渠道等价：
 
-扫描使用time.Ticker，有界取批、并发限制和在途集合去重。CREATED未获配额则持久化延后；PENDING按持久化check_attempts退避查询，达到阈值后告警并降为低频查询，业务状态仍为PENDING。无需另设UNKNOWN/REVIEW状态。重启不重置次数或submitted_at；停机停止领取并有界等待在途操作。
+| 能力 | 必须约定 |
+| --- | --- |
+| 授权 | 引用归属、有效性、绑定账户及撤销语义 |
+| 提交 | 显式传Payment.id作为幂等键；同键同参数重试，不能依赖SDK每次自动生成新键 |
+| 查询 | 可用标识、处理中/暂无记录含义、一致性窗口及终局状态 |
+| 重试 | 是否保证幂等、保护期和允许重试的技术错误；不支持时禁止再次提交 |
 
-## 4. 认证、回调与保护
+首次提交前，以submitted_at加渠道保证时长与本服务恢复时长的较小值、扣安全余量，持久化retry_deadline_at；不支持安全重试时留空，并关闭SDK内部提交重试。仅技术错误或符合渠道契约的无交易结果可在截止时间内重试，且未超过提交轮次预算；明确拒付不重试。期限、轮次、参数均不因重启重置，配置变更不能延长既有期限。
 
-merchant_id只取已验证凭证，所有资源检查归属，跨商户返回不存在。鉴权、参数校验和入口限流后先查询业务唯一键，已有资源直接按幂等规则返回；仅新增业务执行写配额和积压准入。
+重试统一封装在适配器：可复用SDK有界重试，后台记录每轮调用；轮次上限和SDK每轮上限共同限制请求数量，不再叠加另一套HTTP重试。每轮调用及内部重试的超时预算不得跨越安全截止时间。条件不足时只查询并转人工核查，禁止换键、换账户重新扣款。相同操作的技术重试不创建新的支付尝试；本期拒付后重新购买仍需新订单。
 
-回调适配器读取原始字节，使用官方SDK验签并检查账户与时间窗口，再调用确认用例，不开放结果写入RPC。仅成功或明确终局拒付可确认，处理中通知保持PENDING。依靠支付终态和事务内字段校验实现确认幂等，不另存回调收件表或摘要；成功提交后按渠道协议确认接收。重复同结果安全确认，异金额、异账户、异流水或矛盾终态告警；未知支付按渠道重试协议响应。审计记录业务变更，重复投递记录访问日志。
+扫描使用time.Ticker，有界取批、并发限制和在途去重。未获配额的CREATED延后；PENDING按持久化check_attempts退避查询，预算耗尽则设置RECONCILIATION_REQUIRED、告警并降为低频查询，状态仍为PENDING。停机停止领取并有界等待，重启恢复原记录。
+
+## 4. 回调、限流与审计
+
+商户身份只取已验证凭证，所有资源检查归属，跨商户返回不存在。鉴权、校验及入口限流后先识别业务重放，仅新增业务进入写配额与积压准入。授权原文及引用不对普通查询接口回传。
+
+回调读取原始字节，官方SDK验签并校验账户与时间窗口，再调用确认用例。通过事务内字段校验和终态规则保证确认幂等，无独立回调表或结果写入RPC。只确认成功及明确终局拒付，处理中通知保持PENDING；提交后才确认接收。重复投递走访问日志，业务变更写审计；增加发货等外部副作用时需另行设计幂等投递。
 
 | 层级 | 保护 |
 | --- | --- |
-| 入口 | 可信连接IP、报文大小、总并发；不信任客户端转发头 |
-| 商户 | 读写独立配额，超限HTTP429 / gRPC ResourceExhausted |
-| 渠道 | 账户级QPS与并发上限；提交/查询分别熔断，查询预留容量 |
-| SQLite | 单写池、有界等待、积压阈值；故障返回503 / Unavailable，不转为内存成功 |
+| 入口 | 可信连接IP、请求体大小、总并发，不信任客户端转发头 |
+| 商户 | 读写独立配额；超限HTTP429 / gRPC ResourceExhausted |
+| 渠道 | 账户级QPS与并发上限、提交/查询独立熔断，查询预留容量 |
+| SQLite | 单写池、有界等待与积压阈值；故障返回503 / Unavailable，不转内存成功 |
 
-令牌桶复用gokit并限制键数、TTL与突发量，重启或淘汰重置计数由入口总配额兜底。熔断复用gobreaker，业务拒付不计技术失败；网络超时由context与HTTP客户端控制。阈值通过渠道配额和压测确定。已受理支付遇到异常仍保留记录。[熔断组件](https://github.com/sony/gobreaker)
+限流器限制键数、TTL与突发量，重启或淘汰导致的计数重置由入口总量兜底。业务拒付不计熔断技术故障；网络超时使用context及HTTP客户端控制。容量和预算通过压测与渠道契约确定。
 
-业务变更和审计同事务；访问日志不替代业务审计。审计查询仅管理员可用，查询本身留审计。凭证、支付要素与原始回调不落日志。SQLite以文件权限、应用边界和追加触发器保护审计，独立不可变归档按需扩展。
+reason_code采用服务端定义的脱敏值，例如NETWORK_ERROR、GATEWAY_PROCESSING、AUTHORIZATION_INVALID、PAYMENT_DECLINED、RECONCILIATION_REQUIRED；不透传渠道原始错误。可信终态确认会替换待确认原因。人工核查先查询渠道、核对交易号及金额，记录证据引用和操作者，再经受控运维入口调用相同确认用例；不直接改SQL，不据此另扣一笔。暂不能确定则保持PENDING。
+
+业务状态与审计同事务；审计查询仅管理员可用且自身留审计。凭证、支付要素和原始回调不落日志。SQLite以文件权限、应用边界及追加触发器保护，独立不可变归档按需扩展。
 
 ## 5. 六个RPC
 
-统一前缀 `/orderpay/v1`，只返回业务View。订单详情同时返回可空PaymentView；列表仅返回订单摘要。分页使用pageSize/pageToken与nextPageToken，按 `(create_time, id)` 确定排序，token绑定商户和过滤条件。
+统一前缀 `/orderpay/v1`。订单详情返回OrderView及可空PaymentView，列表只返回订单；PaymentView包含快照金额、状态、渠道引用与脱敏原因，不暴露授权或后台调度字段。分页使用pageSize/pageToken、nextPageToken与 `(create_time, id)` 稳定排序，token绑定商户及过滤条件。
 
 | RPC | 相对HTTP路径 |
 | --- | --- |
-| CreateOrder | POST `/orders` |
+| CreateOrder | POST `/orders`，body为OrderInput |
 | GetOrder | GET `/orders/{order_id}` |
 | ListOrders | GET `/orders` |
-| CancelOrder | POST `/orders/{order_id}:cancel` |
-| CreatePayment | POST `/orders/{order_id}/payments` |
+| CancelOrder | POST `/orders/{order_id}:cancel`，无body |
+| CreatePayment | POST `/orders/{order_id}/payments`，body为PaymentInput |
 | ListAuditEvents | GET `/admin/audit-events`，仅管理员 |
 
-CreateOrder的HTTP请求体直接为OrderInput；gRPC使用CreateOrderRequest.order。取消和支付的请求只含路径中的order_id，无额外请求体。新支付及未完成重放目标为202，Location指向订单详情，终态重放200；需后续传输实现，HTTP注解本身不生成状态码。只有SUCCEEDED/PAID可以驱动履约，错误和序列化遵循Fino既有协议。
+PaymentInput仅包含mandateReference，gRPC通过CreatePaymentRequest.payment传入。新支付及非终态重放的HTTP目标为202，Location指向订单详情；终态重放200，需后续传输实现。只有SUCCEEDED/PAID可驱动履约，错误和序列化遵循Fino既有协议。
 
-## 6. 实现验收
+## 6. 依据与验收
 
-本次只更新文档和proto，不运行fino build或修改生成产物。后续设置fino.yaml的SQLite数据库，验证迁移及以下场景：重复订单与异参、并发支付、取消竞态、调用前后崩溃、重启只查询不补扣、重复及矛盾回调、审计失败回滚、锁忙和磁盘满。
+借鉴[Vendure渠道处理器](https://github.com/vendurehq/vendure/blob/master/packages/core/src/config/payment/payment-method-handler.ts)的支付授权输入、[Medusa支付模型](https://github.com/medusajs/medusa/blob/develop/packages/modules/payment/src/models/payment.ts)的金额快照、[Stripe SDK](https://github.com/stripe/stripe-go#automatic-retries)的幂等重试及[Kill Bill](https://docs.killbill.io/latest/payment_plugin)的查询恢复；保留当前单实例范围，不复制会话、Attempt或通用工作流框架。
 
-SQLite必须使用本机持久卷和在线备份。恢复旧备份后先核对渠道账单再恢复提交，切换前隔离旧实例。监控写等待、磁盘/WAL、最老未完成支付及持续待确认告警；按投递事件逐条归档回调不在本期范围。
+本次仅维护文档和proto，不运行fino build或修改生成产物。后续启用fino.yaml的SQLite并验证迁移。验收覆盖：授权越权/撤销、重放时更换授权、并发受理与取消、金额快照、渠道调用前后崩溃、原键重试及预算、期限跨重启不延长、重复/矛盾回调、人工核查留审计、磁盘满和锁忙。
+
+使用本机持久卷与在线备份；恢复旧备份后先核对渠道账单再恢复提交，切换前隔离旧实例。监控写等待、磁盘/WAL、最老未完成记录、重试量及RECONCILIATION_REQUIRED积压。
