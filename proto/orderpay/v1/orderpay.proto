@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package orderpay.v1;
+
+import "orderpay/resource.proto";
+import "fino/options.proto";
+import "fino/core/null.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+
+option go_package = "github.com/fino-io/orderpay/go/orderpay/v1;orderpay";
+
+// 参考 CRUD；替换为业务 RPC 时一并清理 Resource 模型、参数和 import。
+service OrderpayService {
+  rpc GetResource(GetResourceRequest) returns (Resource) {
+    option (google.api.http) = {get: "/orderpay/v1/resources/{id}"};
+  }
+
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse) {
+    option (google.api.http) = {get: "/orderpay/v1/resources"};
+  }
+
+  rpc CreateResource(CreateResourceRequest) returns (Resource) {
+    option (google.api.http) = {post: "/orderpay/v1/resources" body: "resource"};
+  }
+
+  rpc UpdateResource(UpdateResourceRequest) returns (Resource) {
+    option (google.api.http) = {patch: "/orderpay/v1/resources/{resource.id}" body: "resource"};
+  }
+
+  rpc DeleteResource(DeleteResourceRequest) returns (fino.core.Null) {
+    option (google.api.http) = {delete: "/orderpay/v1/resources/{id}"};
+  }
+}
+
+message GetResourceRequest {
+  string id = 1 [(fino.validate) = {required: true max: 128}];
+}
+
+message ListResourcesRequest {
+  int32 page_size = 90;
+  string page_token = 91;
+}
+
+message ListResourcesResponse {
+  repeated Resource resources = 1;
+
+  string next_page_token = 93;
+}
+
+message CreateResourceRequest {
+  Resource resource = 1 [(fino.validate) = {required: true}];
+}
+
+message UpdateResourceRequest {
+  Resource resource = 1 [(fino.validate) = {required: true}];
+
+  google.protobuf.FieldMask update_mask = 80;
+}
+
+message DeleteResourceRequest {
+  string id = 1 [(fino.validate) = {required: true}];
+}

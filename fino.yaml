@@ -1,0 +1,13 @@
+version: v1
+
+backend:
+  orderpay-server:
+    infra:
+      database: ""  # mysql / postgres / sqlite
+      cache: ""     # redis
+      messaging: "" # nats
+      storage: ""   # s3-compatible object storage
+      clients: {}
+      # clients:
+      #   order-server:
+      #     import: github.com/example/order/go/order/client

@@ -1,0 +1,28 @@
+This skill includes material derived from the Microsoft playwright-cli repository.
+
+Source:
+- Repository: microsoft/playwright-cli
+- Path: skills/playwright-cli/SKILL.md
+
+Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0.
+See LICENSE.txt in this directory.
+
+Modifications:
+- Adapted for the Codex skill collection.
+- Added a wrapper script and local reference guides.
+
+Source: OpenAI / openai/skills
+https://github.com/openai/skills/tree/49f948faa9258a0c61caceaf225e179651397431/skills/.curated/playwright
+Reviewed upstream revision: 49f948faa9258a0c61caceaf225e179651397431
+Latest skill commit at review: a5119697b819090e00e5d11ee1d86834d7c1043a
+Reviewed: 2026-10-02
+
+Licensed under Apache-2.0; see LICENSE.txt.
+The original import revision was not recorded; this is a comparison baseline, not a claim that all files are unmodified upstream copies.
+
+Fino adaptation:
+- Uses the project-local skills path instead of the user-global Codex path.
+- Restricts browser automation to explicit user requests and preserves local invocation policy.
+- Wrapper script and workflows reference match the reviewed upstream bytes.

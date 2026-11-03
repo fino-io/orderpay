@@ -1,0 +1,13 @@
+Source: OpenAI / openai/skills
+https://github.com/openai/skills/tree/49f948faa9258a0c61caceaf225e179651397431/skills/.curated/security-best-practices
+Reviewed upstream revision: 49f948faa9258a0c61caceaf225e179651397431
+Latest skill commit at review: 5c8f1e26803bcfaffeceef1e7accbcf7e388417a
+Reviewed: 2026-10-02
+
+Licensed under Apache-2.0; see LICENSE.txt.
+The original import revision was not recorded; this is a comparison baseline, not a claim that all files are unmodified upstream copies.
+
+Fino adaptation:
+- Limits references to Go, general JavaScript frontend, React, and Next.js; loads only matching guidance.
+- Preserves local security-task activation and returns reports in the response unless a file is requested.
+- All four bundled security references match the reviewed upstream bytes.

@@ -1,0 +1,13 @@
+Source: OpenAI / openai/skills
+https://github.com/openai/skills/tree/49f948faa9258a0c61caceaf225e179651397431/skills/.curated/gh-fix-ci
+Reviewed upstream revision: 49f948faa9258a0c61caceaf225e179651397431
+Latest skill commit at review: 77963424cd7687fd52e5fcfdd3f08d826ab9b1ab
+Reviewed: 2026-10-02
+
+Licensed under Apache-2.0; see LICENSE.txt.
+The original import revision was not recorded; this is a comparison baseline, not a claim that all files are unmodified upstream copies.
+
+Fino adaptation:
+- Narrows activation to GitHub Actions tasks; uses Python 3 and project-local script paths.
+- Keeps a fallback when no plan skill is available and preserves local invocation policy.
+- inspect_pr_checks.py matches the reviewed upstream bytes.

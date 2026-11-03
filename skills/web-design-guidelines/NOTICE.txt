@@ -1,0 +1,11 @@
+Sources:
+- Vercel agent-skills: https://github.com/vercel-labs/agent-skills/blob/063bee94c3f4df8453406c830b0a7df0f2860278/skills/web-design-guidelines/SKILL.md
+- Web Interface Guidelines: https://github.com/vercel-labs/web-interface-guidelines/blob/e3d624baaf29dc1fc645aff3e38f03e564d2d6b1/command.md
+
+Copyright (c) 2025 Vercel Labs.
+Licensed under MIT; see LICENSE.txt.
+
+Modifications by Fino:
+- Replaced the skill entrypoint with scoped review guidance and a bundled offline rules snapshot.
+- Added framework, project ownership, and evidence boundaries.
+- The bundled rules snapshot is unchanged. Retrieved 2026-10-02.

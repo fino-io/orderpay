@@ -1,0 +1,10 @@
+# keys 只在图中显示 ID 和关联字段；all 显示全部模型字段。
+fields: keys
+# TB 上到下、BT 下到上、LR 左到右、RL 右到左。
+direction: TB
+# 按字段名额外隐藏图中的非关联字段。
+# 示例：[etag, create_time, update_time, delete_time]
+exclude_fields: []
+# 完整来源字段路径 → 完整目标字段路径。
+# 示例：demo.Post.created_by: demo.User.id
+relations: {}

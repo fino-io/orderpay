@@ -1,0 +1,13 @@
+Source: OpenAI / openai/skills
+https://github.com/openai/skills/tree/49f948faa9258a0c61caceaf225e179651397431/skills/.curated/security-threat-model
+Reviewed upstream revision: 49f948faa9258a0c61caceaf225e179651397431
+Latest skill commit at review: 5c8f1e26803bcfaffeceef1e7accbcf7e388417a
+Reviewed: 2026-10-02
+
+Licensed under Apache-2.0; see LICENSE.txt.
+The original import revision was not recorded; this is a comparison baseline, not a claim that all files are unmodified upstream copies.
+
+Fino adaptation:
+- Narrows activation to explicit threat-modeling work and preserves local invocation policy.
+- Returns the model in the response unless a report file is requested.
+- Both bundled reference files match the reviewed upstream bytes.

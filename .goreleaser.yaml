@@ -1,0 +1,88 @@
+version: 2
+
+dist: .fino/release
+
+project_name: orderpay
+
+release:
+  disable: true
+
+before:
+  hooks:
+    - sh -c "cd backend && go mod tidy"
+    - sh -c "cd frontend && npm ci && npm run build"
+
+builds:
+  - id: orderpay-server
+    dir: backend
+    main: ./cmd/orderpay-server
+    binary: orderpay-server
+    goos:
+      - linux
+    goarch:
+      - amd64
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    ldflags:
+      - -s -w -X main.gitHash={{ .ShortCommit }} -X main.gitBranch={{ .Branch }} -X main.buildTime={{ .Date }}
+
+archives:
+  - id: backend
+    ids:
+      - orderpay-server
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+
+  - id: deployment
+    meta: true
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_deployment"
+    files:
+      - deploy/**/*
+      - backend/configs/**/*
+
+checksum:
+  name_template: checksums.txt
+
+dockers_v2:
+  - id: orderpay-server
+    ids:
+      - orderpay-server
+    dockerfile: backend/build/orderpay-server/Dockerfile
+    images:
+      - orderpay/orderpay-server
+    tags:
+      - "{{ .Tag }}"
+      - "{{ if .IsSnapshot }}latest{{ else }}latest-amd64{{ end }}"
+    platforms:
+      - linux/amd64
+    sbom: false
+    labels:
+      org.opencontainers.image.title: orderpay-server
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.ref.name: "{{ .Branch }}"
+
+  - id: orderpay-frontend
+    dockerfile: frontend/Dockerfile
+    extra_files:
+      - frontend/Caddyfile
+      - .fino/frontend
+    images:
+      - orderpay/orderpay-frontend
+    tags:
+      - "{{ .Tag }}"
+      - "{{ if .IsSnapshot }}latest{{ else }}latest-amd64{{ end }}"
+    platforms:
+      - linux/amd64
+    sbom: false
+    labels:
+      org.opencontainers.image.title: orderpay-frontend
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.ref.name: "{{ .Branch }}"

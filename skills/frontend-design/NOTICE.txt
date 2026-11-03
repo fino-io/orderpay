@@ -1,0 +1,14 @@
+Source: Anthropic / anthropics/skills
+https://github.com/anthropics/skills/tree/8a1541c4a3ffa5a20a5a91de0dcf3f0bab1d1ef4/skills/frontend-design
+Reviewed upstream revision: 8a1541c4a3ffa5a20a5a91de0dcf3f0bab1d1ef4
+Latest skill commit at review: 41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f
+Reviewed: 2026-10-02
+
+Licensed under Apache-2.0; see LICENSE.txt copied from the reviewed upstream version.
+
+Fino adaptation:
+- Rewritten for operational business applications, existing shells, and semantic theme tokens.
+- Preserves generated-file ownership, complete workflow states, and explicit browser-automation scope.
+- Selectively incorporates the upstream guidance on meaningful structure, purposeful motion, and consistent UI copy.
+- Brand landing-page, hero, and aesthetic-risk guidance is not adopted as a business-UI default.
+This is an adapted guide, not an unmodified upstream copy.

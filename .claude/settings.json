@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(.env)",
+      "Read(.env.local)",
+      "Read(.env.*.local)",
+      "Read(secrets/**)",
+      "Read(credentials/**)",
+      "Read(*.pem)",
+      "Read(*.key)"
+    ]
+  },
+  "skillOverrides": {
+    "gh-fix-ci": "user-invocable-only",
+    "playwright": "user-invocable-only",
+    "security-threat-model": "user-invocable-only"
+  }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Security Best Practices"
+  short_description: "Security reviews and secure-by-default guidance"
+  default_prompt: "Use $security-best-practices to review this codebase."
