@@ -2,62 +2,188 @@ syntax = "proto3";
 
 package orderpay.v1;
 
-import "orderpay/resource.proto";
+import "orderpay/status.proto";
 import "fino/options.proto";
-import "fino/core/null.proto";
+import "fino/core/time.proto";
 import "google/api/annotations.proto";
-import "google/protobuf/field_mask.proto";
 
 option go_package = "github.com/fino-io/orderpay/go/orderpay/v1;orderpay";
 
-// 参考 CRUD；替换为业务 RPC 时一并清理 Resource 模型、参数和 import。
+// 商户身份从鉴权上下文获取；模型与API载荷分离。
+// 支付写入与对账RPC是异步受理语义，HTTP状态取决于后续传输层实现。
 service OrderpayService {
-  rpc GetResource(GetResourceRequest) returns (Resource) {
-    option (google.api.http) = {get: "/orderpay/v1/resources/{id}"};
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse) {
+    option (google.api.http) = {post: "/orderpay/v1/orders" body: "*"};
   }
 
-  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse) {
-    option (google.api.http) = {get: "/orderpay/v1/resources"};
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse) {
+    option (google.api.http) = {get: "/orderpay/v1/orders/{order_id}"};
   }
 
-  rpc CreateResource(CreateResourceRequest) returns (Resource) {
-    option (google.api.http) = {post: "/orderpay/v1/resources" body: "resource"};
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse) {
+    option (google.api.http) = {get: "/orderpay/v1/orders"};
   }
 
-  rpc UpdateResource(UpdateResourceRequest) returns (Resource) {
-    option (google.api.http) = {patch: "/orderpay/v1/resources/{resource.id}" body: "resource"};
+  rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse) {
+    option (google.api.http) = {post: "/orderpay/v1/orders/{order_id}:cancel" body: "*"};
   }
 
-  rpc DeleteResource(DeleteResourceRequest) returns (fino.core.Null) {
-    option (google.api.http) = {delete: "/orderpay/v1/resources/{id}"};
+  rpc CreatePayment(CreatePaymentRequest) returns (CreatePaymentResponse) {
+    option (google.api.http) = {post: "/orderpay/v1/orders/{order_id}/payments" body: "*"};
+  }
+
+  rpc GetPayment(GetPaymentRequest) returns (GetPaymentResponse) {
+    option (google.api.http) = {get: "/orderpay/v1/payments/{payment_id}"};
+  }
+
+  rpc ReconcilePayment(ReconcilePaymentRequest) returns (ReconcilePaymentResponse) {
+    option (google.api.http) = {post: "/orderpay/v1/payments/{payment_id}:reconcile" body: "*"};
+  }
+
+  rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse) {
+    option (google.api.http) = {get: "/orderpay/v1/admin/audit-events"};
+  }
+
+  rpc HandlePaymentNotification(HandlePaymentNotificationRequest) returns (HandlePaymentNotificationResponse) {
+    // 仅供已验签的渠道传输适配器调用，不提供通用HTTP绑定；禁止普通商户调用。
   }
 }
 
-message GetResourceRequest {
-  string id = 1 [(fino.validate) = {required: true max: 128}];
+// 幂等键使用显式请求字段，HTTP/gRPC一致；不要同时接受另一套header键。
+message CreateOrderRequest {
+  string idempotency_key = 1 [(fino.validate) = {required: true max: 128}];
+  OrderInput order = 2 [(fino.validate) = {required: true}];
 }
 
-message ListResourcesRequest {
-  int32 page_size = 90;
-  string page_token = 91;
+message CreateOrderResponse {
+  OrderView order = 1;
+  bool replayed = 2;
 }
 
-message ListResourcesResponse {
-  repeated Resource resources = 1;
+message OrderInput {
+  string merchant_order_no = 1 [(fino.validate) = {required: true max: 128}];
+  int64 amount_minor = 2 [(fino.validate) = {required: true min: 1 max: 100000000}];
+  string currency = 3 [(fino.validate) = {required: true oneof: "CNY"}];
+  string description = 4 [(fino.validate) = {required: true max: 200}];
+}
 
+message OrderView {
+  string id = 1;
+  string merchant_order_no = 2;
+  int64 amount_minor = 3;
+  string currency = 4;
+  orderpay.OrderStatus status = 5;
+  string description = 6;
+  fino.core.Timestamp create_time = 98;
+  fino.core.Timestamp update_time = 99;
+}
+
+message GetOrderRequest {
+  string order_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
+}
+
+message GetOrderResponse {
+  OrderView order = 1;
+}
+
+message ListOrdersRequest {
+  orderpay.OrderStatus status = 1 [(fino.validate) = {omitempty: true oneof: "1 2 3"}];
+  int32 page_size = 90 [(fino.validate) = {omitempty: true min: 1 max: 100}];
+  string page_token = 91 [(fino.validate) = {omitempty: true max: 512}];
+}
+
+message ListOrdersResponse {
+  repeated OrderView orders = 1;
   string next_page_token = 93;
 }
 
-message CreateResourceRequest {
-  Resource resource = 1 [(fino.validate) = {required: true}];
+message CancelOrderRequest {
+  string order_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
 }
 
-message UpdateResourceRequest {
-  Resource resource = 1 [(fino.validate) = {required: true}];
-
-  google.protobuf.FieldMask update_mask = 80;
+message CancelOrderResponse {
+  OrderView order = 1;
 }
 
-message DeleteResourceRequest {
-  string id = 1 [(fino.validate) = {required: true}];
+// 金额、商户、渠道、支付状态全部由服务端确定。
+message CreatePaymentRequest {
+  string order_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
+  string idempotency_key = 2 [(fino.validate) = {required: true max: 128}];
+}
+
+message CreatePaymentResponse {
+  PaymentView payment = 1;
+  bool replayed = 2;
+}
+
+message PaymentView {
+  string id = 1;
+  string order_id = 2;
+  int64 amount_minor = 3;
+  string currency = 4;
+  orderpay.PaymentStatus status = 5;
+  string provider_reference = 6;
+  fino.core.Timestamp next_check_at = 7;
+  fino.core.Timestamp create_time = 98;
+  fino.core.Timestamp update_time = 99;
+}
+
+message GetPaymentRequest {
+  string payment_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
+}
+
+message GetPaymentResponse {
+  PaymentView payment = 1;
+}
+
+message ReconcilePaymentRequest {
+  string payment_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
+}
+
+// 仅提前安排下一次对账，不直接发起渠道扣款；终态直接返回。
+message ReconcilePaymentResponse {
+  PaymentView payment = 1;
+}
+
+// 管理员权限；游标绑定全部过滤条件。
+message ListAuditEventsRequest {
+  string merchant_id = 1 [(fino.validate) = {omitempty: true max: 36 uuid: true}];
+  string resource_id = 2 [(fino.validate) = {omitempty: true max: 36 uuid: true}];
+  int32 page_size = 90 [(fino.validate) = {omitempty: true min: 1 max: 100}];
+  string page_token = 91 [(fino.validate) = {omitempty: true max: 512}];
+}
+
+message ListAuditEventsResponse {
+  repeated AuditEventView events = 1;
+  string next_page_token = 93;
+}
+
+message AuditEventView {
+  string id = 1;
+  string merchant_id = 2;
+  string actor_id = 3;
+  string action = 4;
+  string resource_id = 5;
+  string request_id = 6;
+  string before_status = 7;
+  string after_status = 8;
+  string reason_code = 9;
+  fino.core.Timestamp create_time = 98;
+}
+
+// 仅接收可信传输适配器验签后的归一化结果；身份权限检查仍由服务端执行。
+message HandlePaymentNotificationRequest {
+  string channel = 1 [(fino.validate) = {required: true max: 64}];
+  string channel_account_id = 2 [(fino.validate) = {required: true max: 128}];
+  string event_id = 3 [(fino.validate) = {required: true max: 200}];
+  string payment_id = 4 [(fino.validate) = {required: true max: 36 uuid: true}];
+  orderpay.PaymentStatus status = 5 [(fino.validate) = {required: true oneof: "5 6"}];
+  int64 amount_minor = 6 [(fino.validate) = {required: true min: 1 max: 100000000}];
+  string currency = 7 [(fino.validate) = {required: true oneof: "CNY"}];
+  string provider_reference = 8 [(fino.validate) = {required: true max: 200}];
+  string payload_digest = 9 [(fino.validate) = {required: true len: 64}];
+}
+
+message HandlePaymentNotificationResponse {
+  bool duplicate = 1;
 }

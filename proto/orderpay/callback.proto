@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package orderpay;
+
+import "fino/core/time.proto";
+import "fino/options.proto";
+
+option go_package = "github.com/fino-io/orderpay/go/orderpay;orderpay";
+
+message CallbackReceipt {
+  option (fino.model) = {generate: true services: "OrderpayService"};
+
+  string id = 1 [(fino.db) = {len: 36 comment: "主键，UUIDv7"}];
+  string channel = 2 [(fino.db) = {len: 64 comment: "已验签渠道标识"}];
+  string channel_account_id = 3 [(fino.db) = {len: 128 comment: "已确认的渠道账户引用"}];
+  string event_id = 4 [(fino.db) = {len: 200 comment: "渠道事件标识，用于回调去重"}];
+  string payment_id = 5 [(fino.db) = {len: 36 comment: "关联支付 UUID"}];
+  string payload_digest = 6 [(fino.db) = {len: 64 comment: "原始回调报文SHA256摘要，不保存原文"}];
+
+  fino.core.Timestamp create_time = 98 [(fino.db) = {comment: "创建时间，UTC"}];
+}
