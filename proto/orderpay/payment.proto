@@ -11,21 +11,15 @@ option go_package = "github.com/fino-io/orderpay/go/orderpay;orderpay";
 message Payment {
   option (fino.model) = {generate: true services: "OrderpayService"};
 
-  string id = 1 [(fino.db) = {len: 36 comment: "主键及稳定渠道幂等标识，UUIDv7"}];
-  string merchant_id = 2 [(fino.db) = {len: 36 comment: "订单所属商户 UUID"}];
-  string order_id = 3 [(fino.db) = {len: 36 comment: "订单 UUID，每单仅一笔支付" unique_index: "idx_payment_order"}];
-  int64 amount_minor = 4 [(fino.db) = {comment: "订单金额快照，单位分"}];
-  string currency = 5 [(fino.db) = {len: 3 comment: "订单币种快照"}];
-  PaymentStatus status = 6 [(fino.db) = {comment: "支付状态，未知结果不得视为拒付" index: "idx_payment_due"}];
-  string channel = 7 [(fino.db) = {len: 64 comment: "服务端选择的渠道标识"}];
-  string channel_account_id = 8 [(fino.db) = {len: 128 comment: "渠道账户配置引用，不存放凭证"}];
-  string provider_reference = 9 [(fino.db) = {len: 200 comment: "渠道流水号，未确认时为空"}];
-  fino.core.Timestamp first_submitted_at = 10 [(fino.db) = {comment: "首次准备提交渠道的时间，未提交时为空" null: true}];
-  fino.core.Timestamp next_check_at = 11 [(fino.db) = {comment: "后台调度时间，终态为空，REVIEW仅允许查询" null: true index: "idx_payment_due"}];
-  int32 check_attempts = 12 [(fino.db) = {comment: "累计查询次数，手动对账和重启不重置"}];
-  string last_reason_code = 13 [(fino.db) = {len: 64 comment: "最近一次脱敏故障或转人工原因码"}];
-  int64 version = 14 [(fino.db) = {comment: "条件更新版本号"}];
-  fino.core.Timestamp resubmit_deadline_at = 15 [(fino.db) = {null: true comment: "首次提交前确定的保守补发截止时间，未设置或已过期均禁止自动补发"}];
+  string id = 1 [(fino.db) = {len: 36 comment: "主键及渠道交易标识，服务端生成UUIDv7"}];
+  string merchant_id = 2 [(fino.db) = {len: 36 comment: "订单所属商户UUID"}];
+  string order_id = 3 [(fino.db) = {len: 36 comment: "订单UUID，同时作为支付受理幂等标识" unique_index: "idx_payment_order"}];
+  string channel_account_id = 4 [(fino.db) = {len: 128 comment: "不可变渠道账户引用，关联渠道类型及凭证配置"}];
+  PaymentStatus status = 5 [(fino.db) = {comment: "支付状态，待确认不等于失败" index: "idx_payment_due"}];
+  string provider_reference = 6 [(fino.db) = {len: 200 comment: "确认后的渠道流水号，尚无结果时为空"}];
+  fino.core.Timestamp submitted_at = 7 [(fino.db) = {comment: "首次准备提交渠道的时间，尚未准备时为空" null: true}];
+  fino.core.Timestamp next_check_at = 8 [(fino.db) = {comment: "下一次提交或查询时间，终态为空" null: true index: "idx_payment_due"}];
+  int32 check_attempts = 9 [(fino.db) = {comment: "累计查询次数，控制退避和告警，重启不重置"}];
 
   fino.core.Timestamp create_time = 98 [(fino.db) = {comment: "创建时间，UTC"}];
   fino.core.Timestamp update_time = 99 [(fino.db) = {comment: "最后更新时间，UTC"}];

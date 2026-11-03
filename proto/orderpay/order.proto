@@ -11,13 +11,12 @@ option go_package = "github.com/fino-io/orderpay/go/orderpay;orderpay";
 message Order {
   option (fino.model) = {generate: true services: "OrderpayService"};
 
-  string id = 1 [(fino.db) = {len: 36 comment: "主键，服务端生成 UUIDv7"}];
-  string merchant_id = 2 [(fino.db) = {len: 36 comment: "鉴权上下文中的商户 UUID" unique_index: "idx_order_merchant_no"}];
-  string merchant_order_no = 3 [(fino.db) = {len: 128 comment: "商户业务订单号" unique_index: "idx_order_merchant_no"}];
-  int64 amount_minor = 4 [(fino.db) = {comment: "金额，单位分，范围1至100000000"}];
-  string currency = 5 [(fino.db) = {len: 3 comment: "币种，本期仅CNY"}];
-  OrderStatus status = 6 [(fino.db) = {comment: "订单状态，领域层控制转换"}];
-  string description = 7 [(fino.db) = {len: 200 comment: "订单描述"}];
+  string id = 1 [(fino.db) = {len: 36 comment: "主键，服务端生成UUIDv7"}];
+  string merchant_id = 2 [(fino.db) = {len: 36 comment: "已认证商户UUID" unique_index: "idx_order_merchant_no"}];
+  string merchant_order_no = 3 [(fino.db) = {len: 128 comment: "商户业务订单号，同时作为创建幂等标识" unique_index: "idx_order_merchant_no"}];
+  int64 amount_minor = 4 [(fino.db) = {comment: "人民币分，范围1至100000000，创建后不可变"}];
+  string description = 5 [(fino.db) = {len: 200 comment: "订单描述，创建后不可变"}];
+  OrderStatus status = 6 [(fino.db) = {comment: "订单状态，仅领域用例可修改"}];
 
   fino.core.Timestamp create_time = 98 [(fino.db) = {comment: "创建时间，UTC"}];
   fino.core.Timestamp update_time = 99 [(fino.db) = {comment: "最后更新时间，UTC"}];

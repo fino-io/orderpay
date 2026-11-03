@@ -9,11 +9,10 @@ import "google/api/annotations.proto";
 
 option go_package = "github.com/fino-io/orderpay/go/orderpay/v1;orderpay";
 
-// 商户身份从鉴权上下文获取；模型与API载荷分离。
-// 支付写入与对账RPC是异步受理语义，HTTP状态取决于后续传输层实现。
+// 商户身份只取鉴权上下文。订单号与订单ID分别保证创建和支付幂等。
 service OrderpayService {
   rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse) {
-    option (google.api.http) = {post: "/orderpay/v1/orders" body: "*"};
+    option (google.api.http) = {post: "/orderpay/v1/orders" body: "order"};
   }
 
   rpc GetOrder(GetOrderRequest) returns (GetOrderResponse) {
@@ -25,19 +24,11 @@ service OrderpayService {
   }
 
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse) {
-    option (google.api.http) = {post: "/orderpay/v1/orders/{order_id}:cancel" body: "*"};
+    option (google.api.http) = {post: "/orderpay/v1/orders/{order_id}:cancel"};
   }
 
   rpc CreatePayment(CreatePaymentRequest) returns (CreatePaymentResponse) {
-    option (google.api.http) = {post: "/orderpay/v1/orders/{order_id}/payments" body: "*"};
-  }
-
-  rpc GetPayment(GetPaymentRequest) returns (GetPaymentResponse) {
-    option (google.api.http) = {get: "/orderpay/v1/payments/{payment_id}"};
-  }
-
-  rpc ReconcilePayment(ReconcilePaymentRequest) returns (ReconcilePaymentResponse) {
-    option (google.api.http) = {post: "/orderpay/v1/payments/{payment_id}:reconcile" body: "*"};
+    option (google.api.http) = {post: "/orderpay/v1/orders/{order_id}/payments"};
   }
 
   rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse) {
@@ -45,32 +36,29 @@ service OrderpayService {
   }
 }
 
-// 幂等键使用显式请求字段，HTTP/gRPC一致；不要同时接受另一套header键。
+// 同商户订单号、同内容返回已有订单；内容不同返回ORDER_CONFLICT。
 message CreateOrderRequest {
-  string idempotency_key = 1 [(fino.validate) = {required: true max: 128}];
-  // 同一商户订单号改用新键提交，返回ORDER_EXISTS，不创建幂等别名。
-  OrderInput order = 2 [(fino.validate) = {required: true}];
+  OrderInput order = 1 [(fino.validate) = {required: true}];
 }
 
 message CreateOrderResponse {
   OrderView order = 1;
-  bool replayed = 2;
 }
 
 message OrderInput {
   string merchant_order_no = 1 [(fino.validate) = {required: true max: 128}];
+  // 金额单位固定为人民币分。
   int64 amount_minor = 2 [(fino.validate) = {required: true min: 1 max: 100000000}];
-  string currency = 3 [(fino.validate) = {required: true oneof: "CNY"}];
-  string description = 4 [(fino.validate) = {required: true max: 200}];
+  string description = 3 [(fino.validate) = {required: true max: 200}];
 }
 
 message OrderView {
   string id = 1;
   string merchant_order_no = 2;
+  // 金额单位固定为人民币分。
   int64 amount_minor = 3;
-  string currency = 4;
+  string description = 4;
   orderpay.OrderStatus status = 5;
-  string description = 6;
   fino.core.Timestamp create_time = 98;
   fino.core.Timestamp update_time = 99;
 }
@@ -81,6 +69,17 @@ message GetOrderRequest {
 
 message GetOrderResponse {
   OrderView order = 1;
+  // 无支付记录时不设置；查询订单详情即可跟踪支付。
+  PaymentView payment = 2;
+}
+
+message PaymentView {
+  string id = 1;
+  string order_id = 2;
+  orderpay.PaymentStatus status = 3;
+  string provider_reference = 4;
+  fino.core.Timestamp create_time = 98;
+  fino.core.Timestamp update_time = 99;
 }
 
 message ListOrdersRequest {
@@ -102,50 +101,16 @@ message CancelOrderResponse {
   OrderView order = 1;
 }
 
-// 金额、商户、渠道、支付状态全部由服务端确定。
-// 同一订单改用新键提交，返回PAYMENT_EXISTS；同键异参返回IDEMPOTENCY_CONFLICT。
+// 每单只受理一笔支付；重复请求返回该支付的当前状态，不再次扣款。
 message CreatePaymentRequest {
   string order_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
-  string idempotency_key = 2 [(fino.validate) = {required: true max: 128}];
 }
 
 message CreatePaymentResponse {
   PaymentView payment = 1;
-  bool replayed = 2;
 }
 
-message PaymentView {
-  string id = 1;
-  string order_id = 2;
-  int64 amount_minor = 3;
-  string currency = 4;
-  orderpay.PaymentStatus status = 5;
-  string provider_reference = 6;
-  reserved 7;
-  reserved "next_check_at";
-  fino.core.Timestamp create_time = 98;
-  fino.core.Timestamp update_time = 99;
-}
-
-message GetPaymentRequest {
-  string payment_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
-}
-
-message GetPaymentResponse {
-  PaymentView payment = 1;
-}
-
-message ReconcilePaymentRequest {
-  string payment_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
-}
-
-// 复用后台对账规则；不重置预算、不绕过冷却时间、不直接发起扣款。
-// CREATED保持原计划，终态直接返回。
-message ReconcilePaymentResponse {
-  PaymentView payment = 1;
-}
-
-// 管理员权限；游标绑定全部过滤条件。
+// 管理员接口；游标绑定商户、资源等完整过滤条件。
 message ListAuditEventsRequest {
   string merchant_id = 1 [(fino.validate) = {omitempty: true max: 36 uuid: true}];
   string resource_id = 2 [(fino.validate) = {omitempty: true max: 36 uuid: true}];
