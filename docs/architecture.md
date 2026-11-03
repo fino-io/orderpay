@@ -37,19 +37,21 @@ SQLite使用WAL、FULL同步、外键及有界busy_timeout；写池为1、读池
 
 ## 3. 四个状态与恢复
 
-订单为 `PENDING_PAYMENT → PAID / CANCELLED`；只有无支付或明确拒付时可取消。支付如下：
+订单为 `PENDING_PAYMENT → PAID / CANCELLED`；无支付、明确拒付或可证明尚未准备提交时可取消，有未关闭核查的订单禁止取消。支付如下：
 
 | 状态 | 含义 |
 | --- | --- |
 | CREATED | 已受理，尚未准备提交，等待配额 |
 | PENDING | 已准备提交，结果未确认；查询为主，按渠道能力决定是否允许同操作重试 |
 | SUCCEEDED | 渠道确认成功，订单同事务改为PAID |
-| DECLINED | 已确定未支付且不可继续；包括渠道终局拒付或首次提交前授权明确失效 |
+| DECLINED | 已确定未支付且不可继续；包括渠道终局拒付、首次提交前授权明确失效或本地撤销 |
 
 1. **受理**：支付CREATED、金额快照、到期时间和审计同事务写入，提交后才确认受理。支付记录本身是持久待处理工作。
 2. **提交**：取得配额、首次提交前确认授权仍有效；短事务重读状态，改为PENDING、固定submitted_at与retry_deadline_at、预留submit_attempts，再调用渠道。额度不足或依赖故障延后，不伪装成已提交或业务拒付。
-3. **确认**：提交结果、查询和回调共用确认用例。校验账户、交易标识、快照金额、CNY和渠道引用；PENDING结果也保存首次获得的渠道引用。成功时支付、订单和审计同事务更新；终态清空调度时间，重复同结果不再修改，矛盾结果告警。
+3. **确认**：提交结果、查询和回调共用确认用例。校验账户、交易标识、快照金额、CNY和渠道引用；PENDING结果也保存首次获得的渠道引用。成功时支付、订单和审计同事务更新；正常终态清空调度时间；重复同结果不再修改，矛盾结果进入下述核查流程，普通确认不得覆盖终态或清除核查标记。
 4. **恢复**：PENDING优先按渠道引用或原商户交易号查询。超时、暂无记录和查询错误都不表示拒付；无法定位渠道对象时，只能在下面的安全重试条件内幂等重放，不能把缺少查询标识当作交易不存在。
+
+取消CREATED时，在写事务内检查订单未支付、支付仍为CREATED、submit_attempts为0且submitted_at为空；同事务将订单改为CANCELLED、支付改为DECLINED并标记ORDER_CANCELLED、清空调度时间及写审计。首次提交使用相同写事务重新检查订单和支付，任一方先提交后另一方必须退出。PENDING不得按本地超时直接取消。
 
 渠道适配器必须明确以下能力，不默认所有渠道等价：
 
@@ -62,9 +64,9 @@ SQLite使用WAL、FULL同步、外键及有界busy_timeout；写池为1、读池
 
 首次提交前，以submitted_at加渠道保证时长与本服务恢复时长的较小值、扣安全余量，持久化retry_deadline_at；不支持安全重试时留空，并关闭SDK内部提交重试。仅技术错误或符合渠道契约的无交易结果可在截止时间内重试，且未超过提交轮次预算；明确拒付不重试。期限、轮次、参数均不因重启重置，配置变更不能延长既有期限。
 
-重试统一封装在适配器：可复用SDK有界重试，后台记录每轮调用；轮次上限和SDK每轮上限共同限制请求数量，不再叠加另一套HTTP重试。每轮调用及内部重试的超时预算不得跨越安全截止时间。条件不足时只查询并转人工核查，禁止换键、换账户重新扣款。相同操作的技术重试不创建新的支付尝试；本期拒付后重新购买仍需新订单。
+每轮首次调用或恢复重试前，必须在短写事务内重新读取订单与支付、检查未进入终态且无未关闭核查、检查原键/原参数/期限/轮次，递增submit_attempts并持久化下次恢复时间，事务成功后才调用渠道；事务失败或结果未能确认时不发起调用。重试统一封装在适配器，可复用SDK有界重试；轮次上限和SDK每轮上限共同限制请求数量，不再叠加另一套HTTP重试。每轮调用及内部重试的超时预算不得跨越安全截止时间。条件不足时只查询并转人工核查，禁止换键、换账户重新扣款。相同操作的技术重试不创建新的支付尝试；本期拒付后重新购买仍需新订单。
 
-扫描使用time.Ticker，有界取批、并发限制和在途去重。未获配额的CREATED延后；PENDING按持久化check_attempts退避查询，预算耗尽则设置RECONCILIATION_REQUIRED、告警并降为低频查询，状态仍为PENDING。停机停止领取并有界等待，重启恢复原记录。
+扫描使用time.Ticker，有界取批和并发限制，首次提交、恢复重试及查询共用支付ID级在途去重。未获配额的CREATED延后；到期PENDING按持久化check_attempts退避查询，预算耗尽则设置RECONCILIATION_REQUIRED、告警并降为低频查询，状态仍为PENDING；带冲突或补偿标记的终态也纳入低频核查，不能被终态过滤条件遗漏。停机停止领取并有界等待，重启恢复原记录。
 
 ## 4. 回调、限流与审计
 
@@ -81,7 +83,11 @@ SQLite使用WAL、FULL同步、外键及有界busy_timeout；写池为1、读池
 
 限流器限制键数、TTL与突发量，重启或淘汰导致的计数重置由入口总量兜底。业务拒付不计熔断技术故障；网络超时使用context及HTTP客户端控制。容量和预算通过压测与渠道契约确定。
 
-reason_code采用服务端定义的脱敏值，例如NETWORK_ERROR、GATEWAY_PROCESSING、AUTHORIZATION_INVALID、PAYMENT_DECLINED、RECONCILIATION_REQUIRED；不透传渠道原始错误。可信终态确认会替换待确认原因。人工核查先查询渠道、核对交易号及金额，记录证据引用和操作者，再经受控运维入口调用相同确认用例；不直接改SQL，不据此另扣一笔。暂不能确定则保持PENDING。
+reason_code只使用服务端脱敏码。技术异常保留PENDING；查询预算耗尽标记RECONCILIATION_REQUIRED。可信普通终态确认可清除技术原因及RECONCILIATION_REQUIRED，但不能清除已登记的终态冲突或待补偿标记。
+
+终态矛盾或取消后收到可信成功时，在写事务内保留当前业务状态，标记CHANNEL_RESULT_CONFLICT、安排低频核查，并写包含evidence_reference的PAYMENT_RESULT_CONFLICT审计；证据记录渠道结果、金额、交易号及时间，原文放受控证据存储，不塞进reason_code。按支付与同一证据引用避免重复登记，普通重放不得清除标记；仅告警或写访问日志不算持久处理。
+
+人工核查必须有操作者、访问授权及证据引用，通过领域层专用核查用例处理，不增加公共RPC或直接改SQL。证据确认原状态正确时，写RECONCILIATION_CLOSED审计，清除标记及正常终态的调度时间；确认漏记成功时，纠正Payment为SUCCEEDED并保留前后状态审计，订单未取消才同步为PAID。订单已取消则保持取消、标记COMPENSATION_REQUIRED，外部完成补偿并留存凭证后才能关闭；其他矛盾保留核查至外部处置完成，不抹除已确认成功事实。本服务不执行补偿扣款或退款。没有确定证据时不关闭核查，不新发扣款。
 
 业务状态与审计同事务；审计查询仅管理员可用且自身留审计。凭证、支付要素和原始回调不落日志。SQLite以文件权限、应用边界及追加触发器保护，独立不可变归档按需扩展。
 
@@ -98,12 +104,12 @@ reason_code采用服务端定义的脱敏值，例如NETWORK_ERROR、GATEWAY_PRO
 | CreatePayment | POST `/orders/{order_id}/payments`，body为PaymentInput |
 | ListAuditEvents | GET `/admin/audit-events`，仅管理员 |
 
-PaymentInput仅包含mandateReference，gRPC通过CreatePaymentRequest.payment传入。新支付及非终态重放的HTTP目标为202，Location指向订单详情；终态重放200，需后续传输实现。只有SUCCEEDED/PAID可驱动履约，错误和序列化遵循Fino既有协议。
+PaymentInput仅包含mandateReference，gRPC通过CreatePaymentRequest.payment传入。新支付及非终态重放的HTTP目标为202，Location指向订单详情；终态重放200，需后续传输实现。只有订单PAID、支付SUCCEEDED且无未关闭核查时可驱动履约，错误和序列化遵循Fino既有协议。
 
 ## 6. 依据与验收
 
 借鉴[Vendure渠道处理器](https://github.com/vendurehq/vendure/blob/master/packages/core/src/config/payment/payment-method-handler.ts)的支付授权输入、[Medusa支付模型](https://github.com/medusajs/medusa/blob/develop/packages/modules/payment/src/models/payment.ts)的金额快照、[Stripe SDK](https://github.com/stripe/stripe-go#automatic-retries)的幂等重试及[Kill Bill](https://docs.killbill.io/latest/payment_plugin)的查询恢复；保留当前单实例范围，不复制会话、Attempt或通用工作流框架。
 
-本次仅维护文档和proto，不运行fino build或修改生成产物。后续启用fino.yaml的SQLite并验证迁移。验收覆盖：授权越权/撤销、重放时更换授权、并发受理与取消、金额快照、渠道调用前后崩溃、原键重试及预算、期限跨重启不延长、重复/矛盾回调、人工核查留审计、磁盘满和锁忙。
+本次仅维护文档和proto，不运行fino build或修改生成产物。后续启用fino.yaml的SQLite并验证迁移。验收重点：CREATED取消与首次提交竞争；渠道已扣款而本地确认事务失败后重启；成功回调与后台重试竞争；本地拒付或取消后收到可信成功；SDK/后台双层预算及期限；核查证据持久化、人工纠正与补偿关闭；锁忙和磁盘满不误确认受理、不重复扣款。授权越权/撤销、金额快照和业务幂等同时覆盖。
 
-使用本机持久卷与在线备份；恢复旧备份后先核对渠道账单再恢复提交，切换前隔离旧实例。监控写等待、磁盘/WAL、最老未完成记录、重试量及RECONCILIATION_REQUIRED积压。
+使用本机持久卷与在线备份；恢复旧备份后先核对渠道账单再恢复提交，切换前隔离旧实例。监控写等待、磁盘/WAL、最老未完成记录、重试量及核查/补偿积压；备份恢复和故障切换须实测数据恢复点与恢复耗时。本方案不提供多机高可用，容量与生产可用性须由迁移、联调、压测和故障注入验证。

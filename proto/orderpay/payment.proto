@@ -19,11 +19,11 @@ message Payment {
   string channel_account_id = 6 [(fino.db) = {len: 128 comment: "已与授权绑定的不可变渠道账户配置引用"}];
   PaymentStatus status = 7 [(fino.db) = {comment: "支付状态，技术异常保持待确认" index: "idx_payment_due"}];
   string provider_reference = 8 [(fino.db) = {len: 200 comment: "稳定渠道支付对象标识，无独立对象时使用流水号，首次取得后不可替换"}];
-  string reason_code = 9 [(fino.db) = {len: 64 comment: "服务端脱敏原因码，需核查时为RECONCILIATION_REQUIRED"}];
+  string reason_code = 9 [(fino.db) = {len: 64 comment: "服务端脱敏原因码，含待核查、终态冲突或待补偿标记，不能由普通确认清除"}];
   fino.core.Timestamp submitted_at = 10 [(fino.db) = {null: true comment: "首次准备提交时间，重启不重置"}];
   fino.core.Timestamp retry_deadline_at = 11 [(fino.db) = {null: true comment: "首次提交前确定的保守幂等重试截止时间，空值禁止再次提交"}];
   int32 submit_attempts = 12 [(fino.db) = {comment: "已预留的提交调用轮次，调用渠道前递增，重启不重置"}];
-  fino.core.Timestamp next_check_at = 13 [(fino.db) = {null: true comment: "下一次提交或查询时间，终态为空" index: "idx_payment_due"}];
+  fino.core.Timestamp next_check_at = 13 [(fino.db) = {null: true comment: "下一次提交或查询时间，正常终态为空，异常终态安排低频核查" index: "idx_payment_due"}];
   int32 check_attempts = 14 [(fino.db) = {comment: "累计查询次数，用于退避和核查告警，重启不重置"}];
 
   fino.core.Timestamp create_time = 98 [(fino.db) = {comment: "创建时间，UTC"}];

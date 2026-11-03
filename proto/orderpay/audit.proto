@@ -20,5 +20,7 @@ message AuditEvent {
   string after_status = 8 [(fino.db) = {len: 64 comment: "变更后状态名称"}];
   string reason_code = 9 [(fino.db) = {len: 64 comment: "脱敏原因码，不保存凭证或原始报文"}];
 
+  string evidence_reference = 10 [(fino.db) = {len: 512 comment: "受控核查证据或工单引用，普通业务事件可为空，人工纠正及核查关闭时必填"}];
+
   fino.core.Timestamp create_time = 98 [(fino.db) = {comment: "创建时间，UTC"}];
 }

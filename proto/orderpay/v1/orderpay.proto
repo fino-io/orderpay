@@ -97,6 +97,7 @@ message ListOrdersResponse {
   string next_page_token = 93;
 }
 
+// 可撤销未准备提交的CREATED支付；与首次提交在同一写事务规则下互斥。
 message CancelOrderRequest {
   string order_id = 1 [(fino.validate) = {required: true max: 36 uuid: true}];
 }
@@ -143,5 +144,7 @@ message AuditEventView {
   string before_status = 7;
   string after_status = 8;
   string reason_code = 9;
+  // 仅管理员可见的受控证据引用，不包含凭证或原始支付报文。
+  string evidence_reference = 10;
   fino.core.Timestamp create_time = 98;
 }
