@@ -1,6 +1,6 @@
 logs:
   level: info
-  encode: json
+  encode: console
   # output: file
   initFields:
     package: orderpay.v1

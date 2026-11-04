@@ -5,6 +5,7 @@
 当前完成本地订单、幂等、取消、商户隔离、限流及审计。真实授权服务和支付渠道未接入，正式启动的支付入口返回 **503：payment channel is disabled**，不会产生扣款或模拟成功。支付受理与状态规则通过独立测试授权验证。
 
 - [架构设计](docs/architecture.md)
+- [前端页面设计](docs/frontend-design.md)
 - [验收记录与边界](docs/acceptance.md)
 - [接口契约](proto/orderpay/v1/orderpay.proto)
 - [生成接口文档](docs/orderpay/v1/orderpay.md)
