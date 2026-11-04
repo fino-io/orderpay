@@ -4,6 +4,8 @@
 
 当前完成本地订单、幂等、取消、商户隔离、限流及审计。真实授权服务和支付渠道未接入，正式启动的支付入口返回 **503：payment channel is disabled**，不会产生扣款或模拟成功。支付受理与状态规则通过独立测试授权验证。
 
+前端提供订单列表、创建、详情/取消及管理员审计页面；支付只读展示，凭证仅保存在当前页面内存。
+
 - [架构设计](docs/architecture.md)
 - [前端页面设计](docs/frontend-design.md)
 - [验收记录与边界](docs/acceptance.md)
@@ -30,6 +32,7 @@ go build ./cmd/orderpay-server
 ```sh
 cd frontend
 npm ci
+npm test
 npm run build
 ```
 
@@ -60,7 +63,9 @@ npm ci
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-打开 `http://127.0.0.1:5173/console`，配置请求凭证后调用生成接口。开发代理自动读取 `backend/.env` 的 HTTP 端口；后端仅放行 localhost/127.0.0.1:5173 两个开发来源。对外部署时按实际域名调整配置。
+打开 `http://127.0.0.1:5173/orders`，在连接设置中选择商户模式并输入服务凭证；管理员选择审计模式后手动查询。凭证刷新页面即清除，工作模式不授予权限。
+
+开发配置自动读取 `backend/.env` 的 HTTP 端口；后端仅放行 localhost/127.0.0.1:5173 两个开发来源。页眉直接提供 API Console、Issues、Monitor、Logs 和 Trace，Console 的请求 Header 独立配置。正式部署需接入浏览器身份体系，并由网关转发 `/orderpay/v1` 或配置实际 API 地址与 CORS；当前 Caddy 仅代理监控路径。
 
 创建订单的 HTTP 请求体是 OrderInput，例如：
 
@@ -69,3 +74,14 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
 同商户同订单号、同内容重复提交返回同一订单，内容不同返回409。支付渠道未启用时不会创建支付记录，可继续取消订单。只保存必要服务凭据，不将 `.env`、数据库或调试日志提交到仓库。
+
+## 本地演示数据
+
+后端初始化本地 SQLite 后，可导入 30 笔订单、24 笔模拟支付与 54 条导入审计，覆盖分页、正常状态及异常核查：
+
+```sh
+cd backend
+go run ./cmd/seed-demo
+```
+
+默认使用本地 `orderpay.db` 和示例商户，可通过 `-db`、`-merchant` 指定。订单号以 `MOCK-DEMO-` 开头，描述标明模拟；重复运行跳过已有演示订单，保留其他数据。支付使用禁用的模拟账户，不调用渠道，也不参与调度。此工具只用于本地界面演示。

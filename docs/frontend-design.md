@@ -1,6 +1,6 @@
 # Orderpay 前端设计文档
 
-版本：v1.1 · 日期：2026-11-04 · 状态：已审查，待实现
+版本：v1.1 · 日期：2026-11-04 · 状态：首版已实现，待浏览器视觉验收
 
 ## 1. 审查结论与范围
 
@@ -43,7 +43,7 @@
 | `/orders/:orderId` | 查看订单与支付事实 | 刷新、取消候选订单 |
 | `/admin/audit-events` | 定位审计事件 | 手动查询、翻页、展开详情 |
 
-`/` 按所选工作模式进入订单或审计。主导航只显示“订单”或“审计事件”，右侧放主题与连接设置。现有 `/console`、`/issues` 保留，开发环境通过“开发工具”菜单访问；监控链接沿用现有目标。没有凭证时展示连接设置，不请求业务接口。
+`/` 按所选工作模式进入订单或审计。页眉不显示“订单”导航，右侧放主题与连接设置。API Console、Issues、Monitor、Logs 和 Trace 保持平铺入口，不折叠或限定为开发环境；链接沿用现有目标。没有凭证时展示连接设置，不请求业务接口。
 
 当前没有浏览器登录、当前用户或角色发现接口。受控本地使用只增加一个设置区：工作模式（商户/审计）、密码输入框和“应用连接”。API 地址沿用项目配置，不新增环境管理器。
 
@@ -247,4 +247,4 @@ SO-20261104-001          ¥19.90      待支付  …         查看
 - [业务工作流](../backend/modules/orderpay-server/domain/service/workflow.go)、[取消规则](../backend/modules/orderpay-server/domain/model/payment.go)、[查询仓储](../backend/modules/orderpay-server/infra/repo/workflow.go)：事务检查、查询副作用及排序。
 - [鉴权](../backend/modules/orderpay-server/app/auth.go)、[路由](../frontend/router.tsx)、[主题](../frontend/app/globals.css)、[生成客户端](../frontend/generated/api-client.ts)：权限和扩展边界。
 
-本次只更新设计文档，不修改业务代码、契约或生成文件。
+首版实现位于项目自有前端文件，未修改业务契约或生成文件；实际验证与剩余边界见[验收记录](acceptance.md)。
